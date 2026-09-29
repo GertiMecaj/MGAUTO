@@ -58,6 +58,8 @@ object MgApi {
          * Pets keep [maxScale]; the two are not interchangeable. */
         val maxSizeMultiplier: Double? = null,
         val baseSellPrice: Double? = null,
+        /** Seed purchase price in coins when exposed by live game data. */
+        val purchasePrice: Long? = null,
         val hoursToMature: Double? = null,
         val maturitySellPrice: Double? = null,
         val color: String? = null,
@@ -501,6 +503,7 @@ object MgApi {
                     cropSprite = cropObj?.get("sprite")?.jsonPrimitive?.contentOrNull,
                     maxSizeMultiplier = cropObj?.get("maxSizeMultiplier")?.jsonPrimitive?.doubleOrNull,
                     baseSellPrice = cropObj?.get("baseSellPrice")?.jsonPrimitive?.doubleOrNull,
+                    purchasePrice = seedObj?.get("purchasePrice")?.jsonPrimitive?.doubleOrNull?.toLong(),
                     plantSprite = plantObj?.get("sprite")?.jsonPrimitive?.contentOrNull,
                     plantSlotOffsets = slotOffsets,
                     plantSlotCapacity = plantObj?.get("slotCapacity")?.jsonPrimitive?.intOrNull,
