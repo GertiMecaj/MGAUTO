@@ -110,6 +110,7 @@ import com.mgafk.app.ui.screens.pets.PetTeamCard
 import com.mgafk.app.ui.screens.shops.ShopsCards
 import com.mgafk.app.ui.screens.nuclear.NuclearLogsCard
 import com.mgafk.app.ui.screens.projects.ProjectACard
+import com.mgafk.app.ui.screens.projects.ProjectBCard
 import com.mgafk.app.ui.screens.status.LiveStatusCard
 import com.mgafk.app.ui.screens.status.WeatherStationCard
 import com.mgafk.app.ui.theme.Accent
@@ -144,6 +145,7 @@ enum class NavSection(
     GARDEN("Garden", Icons.Outlined.Grass, requiresConnection = true),
     SHOPS("Shops", Icons.Outlined.ShoppingCart, requiresConnection = true),
     PROJECT_A("Project A", Icons.Outlined.Grass, requiresConnection = true),
+    PROJECT_B("Project B", Icons.Outlined.Agriculture, requiresConnection = true),
     NUCLEAR("Nuclear", Icons.Outlined.Science),
     SOCIAL("Social", Icons.Outlined.People),
     ALERTS("Alerts", Icons.Outlined.Notifications),
@@ -738,6 +740,16 @@ private fun SectionContent(
                 apiReady = state.apiReady,
                 onEnabledChange = { enabled -> viewModel.setProjectAEnabled(session.id, enabled) },
                 onSeedSelectionChange = { seeds -> viewModel.setProjectASelectedSeeds(session.id, seeds) },
+            )
+        }
+        NavSection.PROJECT_B -> {
+            ProjectBCard(
+                session = session,
+                apiReady = state.apiReady,
+                onEnabledChange = { viewModel.setProjectBEnabled(session.id, it) },
+                onPlantSelectionChange = { viewModel.setProjectBSelectedPlants(session.id, it) },
+                onBlockGoldChange = { viewModel.setProjectBBlockGold(session.id, it) },
+                onBlockRainbowChange = { viewModel.setProjectBBlockRainbow(session.id, it) },
             )
         }
         NavSection.NUCLEAR -> {
