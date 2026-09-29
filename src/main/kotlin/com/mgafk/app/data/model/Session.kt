@@ -41,6 +41,8 @@ data class Session(
     val petHutch: List<InventoryPetItem> = emptyList(),
     val feedingTrough: List<InventoryCropsItem> = emptyList(),
     val toolShack: List<InventoryToolItem> = emptyList(),
+    /** Egg stacks discovered in any authoritative server storage. */
+    val storedEggs: List<StoredEggItem> = emptyList(),
     val chatMessages: List<ChatMessage> = emptyList(),
     val playersList: List<PlayerSnapshot> = emptyList(),
     val gameVersion: String = "",
@@ -161,6 +163,13 @@ data class InventorySeedItem(
 
 @Serializable
 data class InventoryEggItem(
+    val eggId: String = "",
+    val quantity: Int = 0,
+)
+
+@Serializable
+data class StoredEggItem(
+    val storageId: String = "",
     val eggId: String = "",
     val quantity: Int = 0,
 )

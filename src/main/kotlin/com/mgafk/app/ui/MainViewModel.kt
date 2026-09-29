@@ -24,6 +24,7 @@ import com.mgafk.app.data.model.PlayerSnapshot
 import com.mgafk.app.data.model.GardenEggSnapshot
 import com.mgafk.app.data.model.GardenPlantSnapshot
 import com.mgafk.app.data.model.InventoryEggItem
+import com.mgafk.app.data.model.StoredEggItem
 import com.mgafk.app.data.model.InventoryPetItem
 import com.mgafk.app.data.model.InventoryPlantItem
 import com.mgafk.app.data.model.CrystalType
@@ -128,6 +129,7 @@ private const val PROJECT_C_HUNGER_THRESHOLD = 0.50
 private const val PROJECT_D_TEAM_CONFIRM_TIMEOUT_MS = 7_500L
 private const val PROJECT_AUTOMATION_CONFIRM_TIMEOUT_MS = 7_500L
 private const val PROJECT_B_POST_SELL_HOLD_MS = 10_000L
+private const val PROJECT_F_POST_HATCH_HOLD_MS = 10_000L
 
 class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContext = com.mgafk.app.desktop.DesktopContext.instance) {
     private val viewModelScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
@@ -633,6 +635,134 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         }
     }
 
+
+    private val projectFJobs = mutableMapOf<String, Job>()
+    private val projectFActionJobs = mutableMapOf<String, Job>()
+
+    fun setProjectFEnabled(sessionId: String, enabled: Boolean) {
+        updateSession(sessionId) { it.copy(projectFEnabled = enabled) }
+        if (enabled) {
+            scheduleProjectF(sessionId)
+        } else {
+            projectFJobs.remove(sessionId)?.cancel()
+            projectFActionJobs.remove(sessionId)?.cancel()
+        }
+    }
+
+    private fun scheduleProjectF(sessionId: String, delayMs: Long = 140L) {
+        projectFJobs[sessionId]?.cancel()
+        projectFJobs[sessionId] = viewModelScope.launch {
+            delay(delayMs)
+            runProjectF(sessionId)
+        }
+    }
+
+    private suspend fun awaitProjectFRetrieval(
+        sessionId: String,
+        eggId: String,
+        beforeQuantity: Int,
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + PROJECT_AUTOMATION_CONFIRM_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val session = _state.value.sessions.find { it.id == sessionId } ?: return false
+            val current = session.inventory.eggs.find { it.eggId == eggId }?.quantity ?: 0
+            if (current > beforeQuantity) return true
+            delay(75)
+        }
+        return false
+    }
+
+    private suspend fun awaitProjectFHatch(sessionId: String, tileId: Int): Boolean {
+        val deadline = System.currentTimeMillis() + PROJECT_AUTOMATION_CONFIRM_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val session = _state.value.sessions.find { it.id == sessionId } ?: return false
+            if (session.gardenEggs.none { it.tileId == tileId }) return true
+            delay(75)
+        }
+        return false
+    }
+
+    private fun runProjectF(sessionId: String) {
+        if (projectFActionJobs[sessionId]?.isActive == true) return
+        if (pendingGrowEggJobs.keys.any { it.startsWith(sessionId + ":") }) return
+
+        val session = _state.value.sessions.find { it.id == sessionId } ?: return
+        if (!session.projectFEnabled || session.status != SessionStatus.CONNECTED) return
+
+        val now = System.currentTimeMillis()
+        val matureEgg = session.gardenEggs
+            .filter { it.maturedAt > 0L && now >= it.maturedAt }
+            .minWithOrNull(compareBy<com.mgafk.app.data.model.GardenEggSnapshot> { it.maturedAt }.thenBy { it.tileId })
+
+        if (matureEgg != null) {
+            projectFActionJobs[sessionId] = viewModelScope.launch {
+                try {
+                    withProjectDTeam(
+                        sessionId = sessionId,
+                        role = ProjectDOverrideRole.HATCHING,
+                        holdAfterMs = PROJECT_F_POST_HATCH_HOLD_MS,
+                    ) {
+                        val before = _state.value.sessions.find { it.id == sessionId } ?: return@withProjectDTeam
+                        preHatchPetIds[sessionId] = (
+                            before.inventory.pets.map { it.id } +
+                                before.petHutch.map { it.id }
+                            ).toSet()
+                        updateSession(sessionId) { it.copy(lastHatchedEggId = matureEgg.eggId) }
+                        clients[sessionId]?.actions?.hatchEgg(matureEgg.tileId)
+                        if (!awaitProjectFHatch(sessionId, matureEgg.tileId)) {
+                            AppLog.w(TAG, "[ProjectF] Hatch not confirmed for tile " + matureEgg.tileId)
+                            preHatchPetIds.remove(sessionId)
+                        }
+                    }
+                } finally {
+                    projectFActionJobs.remove(sessionId)
+                    scheduleProjectF(sessionId)
+                }
+            }
+            return
+        }
+
+        if (session.inventory.eggs.any { it.quantity > 0 } && session.freePlantTiles > 0) {
+            if (pendingPlantJobs.keys.any { it.startsWith(sessionId + ":") }) return
+            val egg = session.inventory.eggs.first { it.quantity > 0 }
+            growEgg(sessionId, egg.eggId)
+            return
+        }
+
+        if (session.inventory.eggs.isEmpty() &&
+            session.storedEggs.any { it.quantity > 0 } &&
+            inventorySlotCount(session) < StorageCapacity.INVENTORY_LIMIT
+        ) {
+            val stored = session.storedEggs.first { it.quantity > 0 }
+            val beforeQuantity = session.inventory.eggs.find { it.eggId == stored.eggId }?.quantity ?: 0
+            projectFActionJobs[sessionId] = viewModelScope.launch {
+                try {
+                    val currentSession = _state.value.sessions.find { it.id == sessionId } ?: return@launch
+                    clients[sessionId]?.actions?.retrieveItemFromStorage(
+                        itemId = stored.eggId,
+                        storageId = stored.storageId,
+                        toInventoryIndex = inventorySlotCount(currentSession),
+                        quantity = 1,
+                    )
+                    if (!awaitProjectFRetrieval(sessionId, stored.eggId, beforeQuantity)) {
+                        AppLog.w(TAG, "[ProjectF] Egg retrieval not confirmed: " + stored.eggId + " from " + stored.storageId)
+                    }
+                } finally {
+                    projectFActionJobs.remove(sessionId)
+                    scheduleProjectF(sessionId)
+                }
+            }
+            return
+        }
+
+        val nextMaturity = session.gardenEggs.asSequence()
+            .map { it.maturedAt }
+            .filter { it > now }
+            .minOrNull()
+        if (nextMaturity != null) {
+            scheduleProjectF(sessionId, (nextMaturity - now).coerceAtLeast(1L) + 50L)
+        }
+    }
 
     private val projectEJobs = mutableMapOf<String, Job>()
 
@@ -2598,6 +2728,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 scheduleProjectA(sessionId)
                 scheduleProjectB(sessionId)
                 scheduleProjectC(sessionId)
+                scheduleProjectF(sessionId)
             }
             is ClientEvent.CrystalsChanged -> {
                 // Not persisted: the server reports it again on every reconnect, and it changes
@@ -2703,6 +2834,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 val hutchPets = mutableListOf<InventoryPetItem>()
                 val troughCrops = mutableListOf<InventoryCropsItem>()
                 val shackTools = mutableListOf<InventoryToolItem>()
+                val storedEggs = existingSession?.storedEggs?.toMutableList() ?: mutableListOf()
                 var hutchCapacitySlots = existingSession?.hutchCapacitySlots ?: PriceCalculator.HUTCH_BASE_CAPACITY
                 var siloCapacitySlots = existingSession?.siloCapacitySlots ?: PriceCalculator.SILO_BASE_CAPACITY
                 var decorShedCapacitySlots = existingSession?.decorShedCapacitySlots ?: PriceCalculator.DECOR_SHED_BASE_CAPACITY
@@ -2715,6 +2847,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                     val storage = storageEl as? JsonObject ?: continue
                     val storageId = storage["decorId"]?.jsonPrimitive?.contentOrNull ?: continue
                     availableStorages.add(storageId)
+                    storedEggs.removeAll { it.storageId == storageId }
                     // Game now sends the capacity directly as "capacitySlots";
                     // fall back to the legacy "capacityLevel" tier if absent.
                     val slots = storage["capacitySlots"]?.jsonPrimitive?.intOrNull
@@ -2732,6 +2865,16 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                     val storageItems = storage["items"] as? JsonArray ?: continue
                     for (el in storageItems) {
                         val obj = el as? JsonObject ?: continue
+                        if (obj["itemType"]?.jsonPrimitive?.contentOrNull == "Egg") {
+                            val eggId = obj["eggId"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                            if (eggId.isNotBlank()) {
+                                storedEggs.add(StoredEggItem(
+                                    storageId = storageId,
+                                    eggId = eggId,
+                                    quantity = obj["quantity"]?.jsonPrimitive?.intOrNull ?: 1,
+                                ))
+                            }
+                        }
                         when (storageId) {
                             "SeedSilo" -> siloSeeds.add(InventorySeedItem(
                                 species = obj["species"]?.jsonPrimitive?.contentOrNull.orEmpty(),
@@ -2813,6 +2956,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                         petHutch = hutchPets,
                         feedingTrough = troughCrops,
                         toolShack = shackTools,
+                        storedEggs = storedEggs,
                         favoritedItemIds = event.favoritedItemIds.toSet(),
                         lastHatchedPet = hatchedPet ?: it.lastHatchedPet,
                         magicDust = event.magicDust,
@@ -2829,7 +2973,8 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 scheduleProjectA(sessionId)
                 scheduleProjectB(sessionId)
                 scheduleProjectC(sessionId)
-                scheduleProjectB(sessionId)
+                scheduleProjectE(sessionId)
+                scheduleProjectF(sessionId)
             }
             is ClientEvent.EggsChanged -> {
                 val newEggs = event.eggs.map { tile ->
@@ -2850,6 +2995,8 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 }
                 val freeTiles = clients[sessionId]?.let { computeFreePlantTileCount(it) } ?: 0
                 updateSession(sessionId) { it.copy(gardenEggs = newEggs, freePlantTiles = freeTiles) }
+                scheduleProjectF(sessionId)
+                scheduleProjectA(sessionId)
             }
             is ClientEvent.ShopsChanged -> {
                 val previousShops = _state.value.sessions.find { it.id == sessionId }?.shops.orEmpty()
