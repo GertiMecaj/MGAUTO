@@ -291,6 +291,7 @@ data class ShopSnapshot(
     val itemNames: List<String> = emptyList(),
     val itemStocks: Map<String, Int> = emptyMap(),
     val initialStocks: Map<String, Int> = emptyMap(),
+    val purchasePrices: Map<String, Long> = emptyMap(),
     val secondsUntilRestock: Int = 0,
 )
 
