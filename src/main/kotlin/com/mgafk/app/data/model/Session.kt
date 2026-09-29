@@ -72,6 +72,9 @@ data class Session(
     val bots: List<BotSnapshot> = emptyList(),
     /** Per-session saved pet teams (reference account-specific pet ids). */
     val petTeams: List<PetTeam> = emptyList(),
+    /** Project A: automatically buy and plant selected seed species. */
+    val projectAEnabled: Boolean = false,
+    val projectASelectedSeeds: Set<String> = emptySet(),
 )
 
 @Serializable
