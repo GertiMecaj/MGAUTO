@@ -49,7 +49,7 @@ fun main(args: Array<String>) {
         }) {
             LaunchedEffect(Unit) {
                 if (args.contains("--smoke-test")) {
-                    kotlinx.coroutines.delay(15000)
+                    kotlinx.coroutines.withTimeoutOrNull(60000) { while (!model.state.value.apiReady) kotlinx.coroutines.delay(500) }; kotlinx.coroutines.delay(5000)
                     val screen = Robot().createScreenCapture(Rectangle(window.locationOnScreen, window.size))
                     javax.imageio.ImageIO.write(screen, "png", java.io.File("smoke-desktop.png"))
                     java.io.File("smoke-result.txt").writeText("Desktop window rendered; sessions=" + model.state.value.sessions.size)
@@ -72,9 +72,7 @@ fun main(args: Array<String>) {
                             val wasConnected = model.state.value.sessions.find { it.id == id }?.connected == true
                             try {
                                 if (wasConnected) model.disconnectKeepService(id)
-                                val base = gameUrl.ifBlank { "https://magicgarden.gg" }.trimEnd('/')
-                                val encodedRoom = java.net.URLEncoder.encode(room, "UTF-8").replace("+", "%20")
-                                BrowserHost.open("play", id, "$base/r/$encodedRoom", cookie, model.state.value.settings.injectGeminiMod)
+                                BrowserHost.open("play", id, GameLaunch.url(gameUrl, room), GameLaunch.cookie(cookie), model.state.value.settings.injectGeminiMod)
                             } catch(e: Exception) { JOptionPane.showMessageDialog(null,e.message,"Game browser failed",JOptionPane.ERROR_MESSAGE) }
                             finally { busyBrowsers.remove(id); if (wasConnected && model.state.value.sessions.any { it.id == id }) model.connect(id) }
                         }

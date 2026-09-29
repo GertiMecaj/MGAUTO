@@ -23,13 +23,29 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Build browser host
         run: dotnet publish browser/MGAUTO.Browser.csproj -c Release -r win-x64 --self-contained true -o resources/windows/browser
+      - name: Bundle Microsoft browser runtime installer
+        shell: pwsh
+        run: |
+          $file = 'resources/windows/browser/MicrosoftEdgeWebview2Setup.exe'
+          Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $file
+          $sig = Get-AuthenticodeSignature $file
+          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { throw 'Invalid Microsoft installer signature' }
       - name: Browser host smoke test
         shell: pwsh
         run: |
-          $p = Start-Process resources/windows/browser/MGAUTO.Browser.exe -ArgumentList '--self-test' -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw 'Browser host self-test failed' }
+          $start = [System.Diagnostics.ProcessStartInfo]::new((Join-Path $pwd 'resources/windows/browser/MGAUTO.Browser.exe'))
+          $start.UseShellExecute = $false
+          $start.RedirectStandardInput = $true
+          $start.RedirectStandardOutput = $true
+          $p = [System.Diagnostics.Process]::Start($start)
+          $p.StandardInput.WriteLine('{"Mode":"smoke","Profile":"ci-smoke","Url":"https://magicgarden.gg","Cookie":"","Script":"","OAuth":""}')
+          $p.StandardInput.Close()
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); throw 'Browser smoke test timed out' }
+          $output = $p.StandardOutput.ReadToEnd()
+          Write-Output $output
+          if ($p.ExitCode -ne 0 -or -not (Test-Path smoke-browser-result.txt)) { throw 'Browser smoke test failed' }
       - name: Compile and test desktop
-        run: gradle --no-daemon test createDistributable
+        run: gradle --no-daemon -PappVersion=1.0.${{ github.run_number }} test createDistributable
       - name: Launch packaged Windows application
         shell: pwsh
         run: |
@@ -39,7 +55,7 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "Desktop failed: $($p.ExitCode)" }
           if (-not (Test-Path smoke-result.txt)) { throw 'Desktop did not render' }
       - name: Build installer
-        run: gradle --no-daemon packageExe
+        run: gradle --no-daemon -PappVersion=1.0.${{ github.run_number }} packageExe
       - name: Package portable version
         shell: pwsh
         run: |
@@ -54,12 +70,12 @@ jobs:
             MGAUTO-Windows-Portable.zip
             SHA256SUMS.txt
             smoke-*.png
-            smoke-result.txt
+            smoke-*.txt
             build/reports/tests/
       - name: Publish Windows download
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $tag = "windows-1.0.${{ github.run_number }}"
-          gh release create $tag build/compose/binaries/main/exe/*.exe MGAUTO-Windows-Portable.zip SHA256SUMS.txt --title "MGAUTO Windows $tag" --notes "Windows x64 desktop build. Installer includes Java and the browser helper. Microsoft Edge WebView2 Runtime is required for Discord login and Play in game. Automated unit tests and packaged-window launch test passed. Live account gameplay requires your login."
+          $tag = "v1.0.${{ github.run_number }}"
+          gh release create $tag build/compose/binaries/main/exe/*.exe MGAUTO-Windows-Portable.zip SHA256SUMS.txt --title "MGAUTO Windows $tag" --notes "Windows x64 desktop build. Installer includes Java and the browser helper. The app offers to install WebView2 if it is missing. Automated unit tests and packaged-window launch test passed. Live account gameplay requires your login."

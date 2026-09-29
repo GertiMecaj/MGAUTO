@@ -37,12 +37,42 @@ class BrowserWindow : Form {
         try {
             string profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MGAUTO", "Browser", request.Profile);
             Directory.CreateDirectory(profile);
+            try { CoreWebView2Environment.GetAvailableBrowserVersionString(); }
+            catch (WebView2RuntimeNotFoundException) {
+                if (request.Mode == "smoke") throw;
+                var install = MessageBox.Show(this, "MGAUTO needs Microsoft Edge WebView2 to log in and play. Install it now?", "Install browser component", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                if (install != DialogResult.Yes) throw new Exception("WebView2 installation was cancelled.");
+                var setup = Path.Combine(AppContext.BaseDirectory, "MicrosoftEdgeWebview2Setup.exe");
+                if (!File.Exists(setup)) throw new Exception("WebView2 installer is missing. Reinstall MGAUTO.");
+                Text = "MGAUTO — Installing browser component…";
+                using var installer = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(setup, "/silent /install") { UseShellExecute = true })!;
+                await installer.WaitForExitAsync();
+                bool ready = false;
+                for (int attempt = 0; attempt < 60; attempt++) {
+                    try { CoreWebView2Environment.GetAvailableBrowserVersionString(); ready = true; break; }
+                    catch (WebView2RuntimeNotFoundException) { await Task.Delay(1000); }
+                }
+                if (!ready) throw new Exception("WebView2 setup did not complete. Restart MGAUTO after Windows finishes installing it.");
+            }
             var env = await CoreWebView2Environment.CreateAsync(null, profile);
             await web.EnsureCoreWebView2Async(env);
             var core = web.CoreWebView2;
             core.Settings.AreDevToolsEnabled = false;
             core.NewWindowRequested += (_,e) => { e.Handled = true; core.Navigate(e.Uri); };
-            if (request.Mode == "login") {
+            if (request.Mode == "smoke") {
+                SetCookie("MGAUTO_test", "cookie-roundtrip", "magicgarden.gg");
+                var cookies = await core.CookieManager.GetCookiesAsync("https://magicgarden.gg");
+                if (!cookies.Any(c => c.Name == "MGAUTO_test" && c.Value == "cookie-roundtrip")) throw new Exception("Cookie roundtrip failed");
+                core.CookieManager.DeleteCookies("MGAUTO_test", "https://magicgarden.gg");
+                core.NavigationCompleted += async (_,_) => {
+                    var result = await core.ExecuteScriptAsync("JSON.stringify({title:document.title,webgl:!!document.createElement('canvas').getContext('webgl')})");
+                    using var screenshot = File.Create("smoke-browser.png");
+                    await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, screenshot);
+                    File.WriteAllText("smoke-browser-result.txt", result);
+                    Console.Out.WriteLine("{\"smoke\":true}"); Console.Out.Flush(); Close();
+                };
+                core.NavigateToString("<html><head><title>MGAUTO browser ready</title></head><body style='background:#0b0f14;color:#e8ecf0;font:24px Segoe UI;padding:60px'><h1>MGAUTO browser ready</h1><p>WebView2 initialized. Cookie storage and JavaScript enabled.</p></body></html>");
+            } else if (request.Mode == "login") {
                 await core.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllProfile);
                 SetCookie("mc_oauth_room_id", "MgAFK", ".magicgarden.gg");
                 SetCookie("mc_oauth_redirect_uri", "https://magicgarden.gg/oauth2/redirect", ".magicgarden.gg");

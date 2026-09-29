@@ -2,7 +2,7 @@
 
 Windows desktop port of [GertiMecaj/mg-afk-android](https://github.com/GertiMecaj/mg-afk-android), based on Android version 2.4.26.
 
-Download the Windows installer or portable ZIP from [Releases](https://github.com/GertiMecaj/MGAUTO/releases). For the portable version, extract the entire folder and run `MGAUTO.exe`. Keep the app and runtime folders together. Java and .NET are bundled. Windows 10/11 x64 and Microsoft Edge WebView2 Runtime are required. WebView2 is normally installed with Windows/Edge; if missing, install it from https://developer.microsoft.com/microsoft-edge/webview2/.
+Download the Windows installer or portable ZIP from [Releases](https://github.com/GertiMecaj/MGAUTO/releases). For the portable version, extract the entire folder and run `MGAUTO.exe`. Keep the app and runtime folders together. Java and .NET are bundled. Windows 10/11 x64 and Microsoft Edge WebView2 Runtime are required. WebView2 is normally installed with Windows/Edge; if missing, MGAUTO offers to install it using the bundled, Microsoft-signed installer (internet required).
 
 ## Use
 
