@@ -1,5 +1,6 @@
 package com.mgafk.app.ui.screens.connection
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -28,12 +30,15 @@ import com.mgafk.app.ui.theme.StatusConnected
 import com.mgafk.app.ui.theme.StatusError
 import com.mgafk.app.ui.theme.SurfaceBorder
 import com.mgafk.app.ui.theme.TextMuted
+import com.mgafk.app.ui.theme.TextPrimary
 
 @Composable
 fun ConnectionCard(
     session: Session,
     onCookieChange: (String) -> Unit,
     onRoomChange: (String) -> Unit,
+    onManualGameVersionEnabledChange: (Boolean) -> Unit,
+    onManualGameVersionChange: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onLogin: () -> Unit,
@@ -58,7 +63,7 @@ fun ConnectionCard(
         OutlinedTextField(
             value = session.cookie,
             onValueChange = onCookieChange,
-            label = { Text("mc_jwt token", fontSize = 12.sp) },
+            label = { Text("Cookie / mc_jwt token", fontSize = 12.sp) },
             visualTransformation = PasswordVisualTransformation(),
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
@@ -71,12 +76,61 @@ fun ConnectionCard(
         OutlinedTextField(
             value = session.room,
             onValueChange = onRoomChange,
-            label = { Text("Room code (optional)", fontSize = 12.sp) },
+            label = { Text("Room ID / code (blank = create room)", fontSize = 12.sp) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             colors = fieldColors,
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Manual game version",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextPrimary,
+                )
+                Text(
+                    if (session.manualGameVersionEnabled)
+                        "Use the version below for connect and reconnect."
+                    else if (session.gameVersion.isNotBlank())
+                        "Automatic • current: " + session.gameVersion
+                    else
+                        "Automatic version discovery",
+                    fontSize = 10.sp,
+                    color = TextMuted,
+                )
+            }
+            Switch(
+                checked = session.manualGameVersionEnabled,
+                onCheckedChange = onManualGameVersionEnabledChange,
+                enabled = !session.connected && !session.busy,
+            )
+        }
+
+        if (session.manualGameVersionEnabled) {
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = session.manualGameVersion,
+                onValueChange = onManualGameVersionChange,
+                label = { Text("Game version", fontSize = 12.sp) },
+                placeholder = { Text("Paste exact version", fontSize = 11.sp) },
+                supportingText = {
+                    Text(
+                        "Automatic version fetching is disabled while this override is on.",
+                        fontSize = 10.sp,
+                    )
+                },
+                singleLine = true,
+                enabled = !session.connected && !session.busy,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = fieldColors,
+            )
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -118,7 +172,7 @@ fun ConnectionCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(44.dp),
-            enabled = !session.busy && session.cookie.isNotBlank(),
+            enabled = !session.busy && session.cookie.isNotBlank() && (!session.manualGameVersionEnabled || session.manualGameVersion.isNotBlank()),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (session.connected) StatusError else StatusConnected,

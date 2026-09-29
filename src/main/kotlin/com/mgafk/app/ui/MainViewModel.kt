@@ -9,6 +9,7 @@ import com.mgafk.app.data.repository.StorageCapacity
 import com.mgafk.app.data.repository.ShopItemBuyState
 import com.mgafk.app.data.repository.buyState
 import com.mgafk.app.data.repository.CropSize
+import com.mgafk.app.data.repository.ConnectionVersionPolicy
 import com.mgafk.app.data.repository.PetTeams
 import com.mgafk.app.data.repository.GardenTiles
 import com.mgafk.app.data.model.BotSnapshot
@@ -338,8 +339,21 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
 
         viewModelScope.launch {
             try {
-                val version = VersionFetcher.fetchVersionForRoom(
-                    host = session.gameUrl.removePrefix("https://").removePrefix("http://").ifBlank { "magicgarden.gg" },
+                val host = session.gameUrl
+                    .removePrefix("https://")
+                    .removePrefix("http://")
+                    .ifBlank { "magicgarden.gg" }
+
+                val manualVersion = ConnectionVersionPolicy.manualVersion(
+                    enabled = session.manualGameVersionEnabled,
+                    value = session.manualGameVersion,
+                )
+                if (session.manualGameVersionEnabled && manualVersion == null) {
+                    throw IllegalArgumentException("Manual game version is enabled but empty.")
+                }
+
+                val version = manualVersion ?: VersionFetcher.fetchVersionForRoom(
+                    host = host,
                     room = session.room,
                 )
 
@@ -353,11 +367,6 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                         handleClientEvent(sessionId, event)
                     }
                 }
-
-                val host = session.gameUrl
-                    .removePrefix("https://")
-                    .removePrefix("http://")
-                    .ifBlank { "magicgarden.gg" }
 
                 val s = _state.value.settings
                 val reconnectWithSettings = session.reconnect.copy(
@@ -373,7 +382,9 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                     room = session.room,
                     host = host,
                     reconnect = reconnectWithSettings,
-                    versionFetcher = { VersionFetcher.fetchVersionForRoom(host = host, room = session.room) },
+                    versionFetcher = if (manualVersion != null) null else {
+                        { VersionFetcher.fetchVersionForRoom(host = host, room = session.room) }
+                    },
                 )
             } catch (e: Exception) {
                 updateSession(sessionId) {

@@ -45,7 +45,11 @@ data class Session(
     val storedEggs: List<StoredEggItem> = emptyList(),
     val chatMessages: List<ChatMessage> = emptyList(),
     val playersList: List<PlayerSnapshot> = emptyList(),
+    /** Effective version used by the most recent/current connection. */
     val gameVersion: String = "",
+    /** When enabled, bypass remote version discovery and use [manualGameVersion] exactly. */
+    val manualGameVersionEnabled: Boolean = false,
+    val manualGameVersion: String = "",
     val freePlantTiles: Int = 0,
     /** Crystals standing in the garden, on the dirt and on the boardwalk alike. */
     val crystals: List<PlacedCrystal> = emptyList(),

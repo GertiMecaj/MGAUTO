@@ -574,8 +574,23 @@ private fun SectionContent(
 
             ConnectionCard(
                 session = session,
-                onCookieChange = { viewModel.updateSession(session.id) { s -> s.copy(cookie = it) } },
-                onRoomChange = { viewModel.updateSession(session.id) { s -> s.copy(room = it) } },
+                onCookieChange = { value ->
+                    viewModel.updateSession(session.id) { s -> s.copy(cookie = value) }
+                },
+                onRoomChange = { value ->
+                    viewModel.updateSession(session.id) { s -> s.copy(room = value) }
+                },
+                onManualGameVersionEnabledChange = { enabled ->
+                    viewModel.updateSession(session.id) { s ->
+                        s.copy(
+                            manualGameVersionEnabled = enabled,
+                            manualGameVersion = if (enabled && s.manualGameVersion.isBlank()) s.gameVersion else s.manualGameVersion,
+                        )
+                    }
+                },
+                onManualGameVersionChange = { value ->
+                    viewModel.updateSession(session.id) { s -> s.copy(manualGameVersion = value) }
+                },
                 onConnect = { viewModel.connect(session.id) },
                 onDisconnect = { viewModel.disconnect(session.id) },
                 onLogin = { onLoginRequest(session.id) },
