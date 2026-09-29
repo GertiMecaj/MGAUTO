@@ -783,6 +783,11 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         if (enabled) scheduleProjectE(sessionId) else projectEJobs.remove(sessionId)?.cancel()
     }
 
+    fun setProjectESelectedItems(sessionId: String, itemIds: Set<String>) {
+        updateSession(sessionId) { it.copy(projectESelectedItems = itemIds) }
+        scheduleProjectE(sessionId)
+    }
+
     private fun scheduleProjectE(sessionId: String) {
         projectEJobs[sessionId]?.cancel()
         projectEJobs[sessionId] = viewModelScope.launch {
@@ -792,13 +797,15 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
     }
 
     /**
-     * Project E buys from every live shop. One item is purchased per authoritative shop-state
-     * cycle; PurchaseShopItem's optimistic stock decrement prevents Project A/E from selecting
-     * the same last unit in the same UI state, and the next ShopsChanged confirmation advances.
+     * Project E buys only explicitly selected catalog items. It purchases one unit per
+     * authoritative shop-state cycle and keeps repeating until selected stock is exhausted
+     * or the item's one-time/cap rule makes it non-buyable.
      */
     private fun runProjectE(sessionId: String) {
         val session = _state.value.sessions.find { it.id == sessionId } ?: return
         if (!session.projectEEnabled || session.status != SessionStatus.CONNECTED) return
+        val selected = session.projectESelectedItems
+        if (selected.isEmpty()) return
 
         val candidate = session.shops.asSequence()
             .flatMap { shop ->
@@ -807,7 +814,9 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 }
             }
             .firstOrNull { (_, item, stock) ->
-                stock > 0 && session.buyState(item) == ShopItemBuyState.Buyable
+                item in selected &&
+                    stock > 0 &&
+                    session.buyState(item) == ShopItemBuyState.Buyable
             } ?: return
 
         purchaseShopItem(sessionId, candidate.first, candidate.second)

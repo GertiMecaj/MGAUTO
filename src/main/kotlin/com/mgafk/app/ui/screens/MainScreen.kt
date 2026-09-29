@@ -796,7 +796,9 @@ private fun SectionContent(
         NavSection.PROJECT_E -> {
             ProjectECard(
                 session = session,
+                apiReady = state.apiReady,
                 onEnabledChange = { viewModel.setProjectEEnabled(session.id, it) },
+                onItemSelectionChange = { viewModel.setProjectESelectedItems(session.id, it) },
             )
         }
         NavSection.PROJECT_F -> {

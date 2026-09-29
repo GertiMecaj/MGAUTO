@@ -94,8 +94,9 @@ data class Session(
     val projectDDefaultTeamId: String? = null,
     val projectDSellingTeamId: String? = null,
     val projectDHatchingTeamId: String? = null,
-    /** Project E: purchase every currently available shop item. */
+    /** Project E: repeatedly purchase only the shop item ids explicitly selected by the user. */
     val projectEEnabled: Boolean = false,
+    val projectESelectedItems: Set<String> = emptySet(),
     /** Project F: retrieve stored eggs, plant them regardless of Project A's plot reserve, hatch. */
     val projectFEnabled: Boolean = false,
 )
