@@ -126,6 +126,8 @@ data class UiState(
 private const val PROJECT_A_RESERVED_EMPTY_PLOTS = 13
 private const val PROJECT_C_HUNGER_THRESHOLD = 0.50
 private const val PROJECT_D_TEAM_CONFIRM_TIMEOUT_MS = 7_500L
+private const val PROJECT_AUTOMATION_CONFIRM_TIMEOUT_MS = 7_500L
+private const val PROJECT_B_POST_SELL_HOLD_MS = 10_000L
 
 class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContext = com.mgafk.app.desktop.DesktopContext.instance) {
     private val viewModelScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
@@ -872,11 +874,17 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         }
     }
 
+    private val projectBSellJobs = mutableMapOf<String, Job>()
     private val projectBJobs = mutableMapOf<String, Job>()
 
     fun setProjectBEnabled(sessionId: String, enabled: Boolean) {
         updateSession(sessionId) { it.copy(projectBEnabled = enabled) }
-        if (enabled) scheduleProjectB(sessionId) else projectBJobs.remove(sessionId)?.cancel()
+        if (enabled) {
+            scheduleProjectB(sessionId)
+        } else {
+            projectBJobs.remove(sessionId)?.cancel()
+            projectBSellJobs.remove(sessionId)?.cancel()
+        }
     }
 
     fun setProjectBSelectedPlants(sessionId: String, plants: Set<String>) {
@@ -906,12 +914,51 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         }
     }
 
+    private suspend fun awaitProjectBSale(sessionId: String, beforeProduceCount: Int): Boolean {
+        val deadline = System.currentTimeMillis() + PROJECT_AUTOMATION_CONFIRM_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val session = _state.value.sessions.find { it.id == sessionId } ?: return false
+            if (session.inventory.produce.size < beforeProduceCount) return true
+            delay(75)
+        }
+        return false
+    }
+
+    private fun startProjectBSell(sessionId: String) {
+        if (projectBSellJobs[sessionId]?.isActive == true) return
+        projectBSellJobs[sessionId] = viewModelScope.launch {
+            try {
+                val session = _state.value.sessions.find { it.id == sessionId } ?: return@launch
+                if (!session.projectBEnabled ||
+                    inventorySlotCount(session) < StorageCapacity.INVENTORY_LIMIT ||
+                    session.inventory.produce.isEmpty()
+                ) return@launch
+
+                val beforeProduceCount = session.inventory.produce.size
+                withProjectDTeam(
+                    sessionId = sessionId,
+                    role = ProjectDOverrideRole.SELLING,
+                    holdAfterMs = PROJECT_B_POST_SELL_HOLD_MS,
+                ) {
+                    clients[sessionId]?.actions?.sellAllCrops()
+                    if (!awaitProjectBSale(sessionId, beforeProduceCount)) {
+                        AppLog.w(TAG, "[ProjectB] Sell was not confirmed before timeout")
+                    }
+                }
+            } finally {
+                projectBSellJobs.remove(sessionId)
+                scheduleProjectB(sessionId)
+            }
+        }
+    }
+
     /**
      * Project B is confirmation-driven: it issues at most one harvest per state cycle. A
      * Garden/Inventory patch confirms the result and schedules the next crop. If nothing is
      * mature yet, one wake-up is scheduled for the nearest selected crop's endTime.
      */
     private fun runProjectB(sessionId: String) {
+        if (projectBSellJobs[sessionId]?.isActive == true) return
         val session = _state.value.sessions.find { it.id == sessionId } ?: return
         if (!session.projectBEnabled || session.status != SessionStatus.CONNECTED) return
         val selected = session.projectBSelectedPlants
@@ -920,7 +967,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         // Harvesting into a full 100-slot inventory would be rejected. Sell harvested produce
         // first, then wait for the authoritative InventoryChanged patch before harvesting again.
         if (inventorySlotCount(session) >= StorageCapacity.INVENTORY_LIMIT) {
-            if (session.inventory.produce.isNotEmpty()) clients[sessionId]?.actions?.sellAllCrops()
+            if (session.inventory.produce.isNotEmpty()) startProjectBSell(sessionId)
             return
         }
 
