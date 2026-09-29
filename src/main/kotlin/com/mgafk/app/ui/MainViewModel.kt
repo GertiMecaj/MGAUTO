@@ -6,6 +6,8 @@ import com.mgafk.app.data.model.AlertConfig
 import com.mgafk.app.data.model.AlertMode
 import com.mgafk.app.data.model.AppSettings
 import com.mgafk.app.data.repository.StorageCapacity
+import com.mgafk.app.data.repository.ShopItemBuyState
+import com.mgafk.app.data.repository.buyState
 import com.mgafk.app.data.repository.CropSize
 import com.mgafk.app.data.repository.PetTeams
 import com.mgafk.app.data.repository.GardenTiles
@@ -628,6 +630,43 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         }
     }
 
+
+    private val projectEJobs = mutableMapOf<String, Job>()
+
+    fun setProjectEEnabled(sessionId: String, enabled: Boolean) {
+        updateSession(sessionId) { it.copy(projectEEnabled = enabled) }
+        if (enabled) scheduleProjectE(sessionId) else projectEJobs.remove(sessionId)?.cancel()
+    }
+
+    private fun scheduleProjectE(sessionId: String) {
+        projectEJobs[sessionId]?.cancel()
+        projectEJobs[sessionId] = viewModelScope.launch {
+            delay(140)
+            runProjectE(sessionId)
+        }
+    }
+
+    /**
+     * Project E buys from every live shop. One item is purchased per authoritative shop-state
+     * cycle; PurchaseShopItem's optimistic stock decrement prevents Project A/E from selecting
+     * the same last unit in the same UI state, and the next ShopsChanged confirmation advances.
+     */
+    private fun runProjectE(sessionId: String) {
+        val session = _state.value.sessions.find { it.id == sessionId } ?: return
+        if (!session.projectEEnabled || session.status != SessionStatus.CONNECTED) return
+
+        val candidate = session.shops.asSequence()
+            .flatMap { shop ->
+                shop.itemNames.asSequence().map { item ->
+                    Triple(shop.type, item, shop.itemStocks[item] ?: 0)
+                }
+            }
+            .firstOrNull { (_, item, stock) ->
+                stock > 0 && session.buyState(item) == ShopItemBuyState.Buyable
+            } ?: return
+
+        purchaseShopItem(sessionId, candidate.first, candidate.second)
+    }
 
     private enum class ProjectDOverrideRole { SELLING, HATCHING }
     private data class ProjectDOverrideState(
@@ -2798,6 +2837,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 }
                 updateSession(sessionId) { it.copy(shops = newShops) }
                 scheduleProjectA(sessionId)
+                scheduleProjectE(sessionId)
                 // Only check alerts when actual items changed, not just the restock timer. A
                 // restock counts as a change even when it rolled the same items: the stock behind
                 // them is new, so it has to alert again.

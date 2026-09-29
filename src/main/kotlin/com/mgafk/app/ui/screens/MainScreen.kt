@@ -113,6 +113,7 @@ import com.mgafk.app.ui.screens.projects.ProjectACard
 import com.mgafk.app.ui.screens.projects.ProjectBCard
 import com.mgafk.app.ui.screens.projects.ProjectCCard
 import com.mgafk.app.ui.screens.projects.ProjectDCard
+import com.mgafk.app.ui.screens.projects.ProjectECard
 import com.mgafk.app.ui.screens.status.LiveStatusCard
 import com.mgafk.app.ui.screens.status.WeatherStationCard
 import com.mgafk.app.ui.theme.Accent
@@ -150,6 +151,7 @@ enum class NavSection(
     PROJECT_B("Project B", Icons.Outlined.Grass, requiresConnection = true),
     PROJECT_C("Project C", Icons.Outlined.Pets, requiresConnection = true),
     PROJECT_D("Project D", Icons.Outlined.Pets, requiresConnection = true),
+    PROJECT_E("Project E", Icons.Outlined.ShoppingCart, requiresConnection = true),
     NUCLEAR("Nuclear", Icons.Outlined.Science),
     SOCIAL("Social", Icons.Outlined.People),
     ALERTS("Alerts", Icons.Outlined.Notifications),
@@ -772,6 +774,12 @@ private fun SectionContent(
                 onDefaultTeamChange = { viewModel.setProjectDDefaultTeam(session.id, it) },
                 onSellingTeamChange = { viewModel.setProjectDSellingTeam(session.id, it) },
                 onHatchingTeamChange = { viewModel.setProjectDHatchingTeam(session.id, it) },
+            )
+        }
+        NavSection.PROJECT_E -> {
+            ProjectECard(
+                session = session,
+                onEnabledChange = { viewModel.setProjectEEnabled(session.id, it) },
             )
         }
         NavSection.NUCLEAR -> {
