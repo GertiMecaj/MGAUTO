@@ -2220,6 +2220,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 val freeTiles = clients[sessionId]?.let { computeFreePlantTileCount(it) } ?: 0
                 updateSession(sessionId) { it.copy(garden = newGarden, freePlantTiles = freeTiles) }
                 NuclearLogStore.observeGarden(sessionId, newGarden)
+                scheduleProjectA(sessionId)
             }
             is ClientEvent.CrystalsChanged -> {
                 // Not persisted: the server reports it again on every reconnect, and it changes
@@ -2448,6 +2449,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 NuclearLogStore.observePotionInventory(sessionId, tools)
                 scheduleTroughAlertCheck(sessionId)
                 runAutoStock(sessionId, seeds, decors, tools, siloSeeds, shedDecors, shackTools, availableStorages)
+                scheduleProjectA(sessionId)
             }
             is ClientEvent.EggsChanged -> {
                 val newEggs = event.eggs.map { tile ->
@@ -2504,6 +2506,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                     pendingPurchaseJobs.remove(key)?.cancel()
                 }
                 updateSession(sessionId) { it.copy(shops = newShops) }
+                scheduleProjectA(sessionId)
                 // Only check alerts when actual items changed, not just the restock timer. A
                 // restock counts as a change even when it rolled the same items: the stock behind
                 // them is new, so it has to alert again.
