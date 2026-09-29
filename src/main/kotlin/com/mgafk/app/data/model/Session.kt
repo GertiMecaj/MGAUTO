@@ -84,6 +84,10 @@ data class Session(
     /** Project B: harvest selected mature crop species and sell when inventory is full. */
     val projectBEnabled: Boolean = false,
     val projectBSelectedPlants: Set<String> = emptySet(),
+    /** Species whose Gold/Rainbow mutations must be preserved instead of harvested. */
+    val projectBProtectGoldPlants: Set<String> = emptySet(),
+    val projectBProtectRainbowPlants: Set<String> = emptySet(),
+    /** Legacy persisted fields retained only so older session files continue to decode safely. */
     val projectBBlockGold: Boolean = false,
     val projectBBlockRainbow: Boolean = false,
     /** Project C: harvest an active pet's diet and feed it when hunger drops below 50%. */

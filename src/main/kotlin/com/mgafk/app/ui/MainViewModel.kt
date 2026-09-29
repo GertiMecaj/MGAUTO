@@ -1043,17 +1043,39 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
     }
 
     fun setProjectBSelectedPlants(sessionId: String, plants: Set<String>) {
-        updateSession(sessionId) { it.copy(projectBSelectedPlants = plants) }
+        updateSession(sessionId) { session ->
+            session.copy(
+                projectBSelectedPlants = plants,
+                projectBProtectGoldPlants = session.projectBProtectGoldPlants.intersect(plants),
+                projectBProtectRainbowPlants = session.projectBProtectRainbowPlants.intersect(plants),
+            )
+        }
         scheduleProjectB(sessionId)
     }
 
-    fun setProjectBBlockGold(sessionId: String, block: Boolean) {
-        updateSession(sessionId) { it.copy(projectBBlockGold = block) }
+    fun setProjectBProtectGold(sessionId: String, species: String, protect: Boolean) {
+        updateSession(sessionId) { session ->
+            session.copy(
+                projectBProtectGoldPlants = if (protect) {
+                    session.projectBProtectGoldPlants + species
+                } else {
+                    session.projectBProtectGoldPlants - species
+                }
+            )
+        }
         scheduleProjectB(sessionId)
     }
 
-    fun setProjectBBlockRainbow(sessionId: String, block: Boolean) {
-        updateSession(sessionId) { it.copy(projectBBlockRainbow = block) }
+    fun setProjectBProtectRainbow(sessionId: String, species: String, protect: Boolean) {
+        updateSession(sessionId) { session ->
+            session.copy(
+                projectBProtectRainbowPlants = if (protect) {
+                    session.projectBProtectRainbowPlants + species
+                } else {
+                    session.projectBProtectRainbowPlants - species
+                }
+            )
+        }
         scheduleProjectB(sessionId)
     }
 
@@ -1128,10 +1150,11 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
 
         val eligible = session.garden.filter { crop ->
             crop.species in selected &&
-                !ProjectAutomationPolicy.isHarvestBlocked(
+                !ProjectAutomationPolicy.isProjectBCropBlocked(
+                    species = crop.species,
                     mutations = crop.mutations,
-                    blockGold = session.projectBBlockGold,
-                    blockRainbow = session.projectBBlockRainbow,
+                    protectGoldSpecies = session.projectBProtectGoldPlants,
+                    protectRainbowSpecies = session.projectBProtectRainbowPlants,
                 )
         }
         val now = System.currentTimeMillis()

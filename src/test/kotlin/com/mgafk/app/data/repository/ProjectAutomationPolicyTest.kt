@@ -27,6 +27,42 @@ class ProjectAutomationPolicyTest {
         assertFalse(ProjectAutomationPolicy.useDefaultTeam("Snow"))
     }
 
+    @Test fun projectBMutationProtection_appliesOnlyToConfiguredSpecies() {
+        val goldProtected = setOf("Carrot")
+        val rainbowProtected = setOf("Tomato")
+
+        assertTrue(ProjectAutomationPolicy.isProjectBCropBlocked(
+            species = "Carrot",
+            mutations = listOf("Gold"),
+            protectGoldSpecies = goldProtected,
+            protectRainbowSpecies = rainbowProtected,
+        ))
+        assertFalse(ProjectAutomationPolicy.isProjectBCropBlocked(
+            species = "Tomato",
+            mutations = listOf("Gold"),
+            protectGoldSpecies = goldProtected,
+            protectRainbowSpecies = rainbowProtected,
+        ))
+        assertTrue(ProjectAutomationPolicy.isProjectBCropBlocked(
+            species = "Tomato",
+            mutations = listOf("Rainbow"),
+            protectGoldSpecies = goldProtected,
+            protectRainbowSpecies = rainbowProtected,
+        ))
+        assertFalse(ProjectAutomationPolicy.isProjectBCropBlocked(
+            species = "Carrot",
+            mutations = listOf("Rainbow"),
+            protectGoldSpecies = goldProtected,
+            protectRainbowSpecies = rainbowProtected,
+        ))
+        assertFalse(ProjectAutomationPolicy.isProjectBCropBlocked(
+            species = "Pumpkin",
+            mutations = listOf("Gold", "Rainbow"),
+            protectGoldSpecies = goldProtected,
+            protectRainbowSpecies = rainbowProtected,
+        ))
+    }
+
     @Test fun goldAndRainbowFilters_areIndependent() {
         assertTrue(ProjectAutomationPolicy.isHarvestBlocked(listOf("Gold"), blockGold = true, blockRainbow = false))
         assertFalse(ProjectAutomationPolicy.isHarvestBlocked(listOf("Gold"), blockGold = false, blockRainbow = true))

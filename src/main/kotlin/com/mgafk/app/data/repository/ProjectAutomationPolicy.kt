@@ -25,6 +25,18 @@ object ProjectAutomationPolicy {
     fun useDefaultTeam(liveWeather: String): Boolean =
         liveWeather.equals(Constants.formatWeather(null), ignoreCase = true)
 
+    fun isProjectBCropBlocked(
+        species: String,
+        mutations: List<String>,
+        protectGoldSpecies: Set<String>,
+        protectRainbowSpecies: Set<String>,
+    ): Boolean =
+        isHarvestBlocked(
+            mutations = mutations,
+            blockGold = species in protectGoldSpecies,
+            blockRainbow = species in protectRainbowSpecies,
+        )
+
     fun isHarvestBlocked(
         mutations: List<String>,
         blockGold: Boolean,

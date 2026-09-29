@@ -771,8 +771,12 @@ private fun SectionContent(
                 apiReady = state.apiReady,
                 onEnabledChange = { viewModel.setProjectBEnabled(session.id, it) },
                 onPlantSelectionChange = { viewModel.setProjectBSelectedPlants(session.id, it) },
-                onBlockGoldChange = { viewModel.setProjectBBlockGold(session.id, it) },
-                onBlockRainbowChange = { viewModel.setProjectBBlockRainbow(session.id, it) },
+                onProtectGoldChange = { species, protect ->
+                    viewModel.setProjectBProtectGold(session.id, species, protect)
+                },
+                onProtectRainbowChange = { species, protect ->
+                    viewModel.setProjectBProtectRainbow(session.id, species, protect)
+                },
             )
         }
         NavSection.PROJECT_C -> {
