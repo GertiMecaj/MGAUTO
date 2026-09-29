@@ -626,6 +626,74 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
     }
 
 
+    private val projectCJobs = mutableMapOf<String, Job>()
+
+    fun setProjectCEnabled(sessionId: String, enabled: Boolean) {
+        updateSession(sessionId) { it.copy(projectCEnabled = enabled) }
+        if (enabled) scheduleProjectC(sessionId) else projectCJobs.remove(sessionId)?.cancel()
+    }
+
+    private fun scheduleProjectC(sessionId: String) {
+        projectCJobs[sessionId]?.cancel()
+        projectCJobs[sessionId] = viewModelScope.launch {
+            delay(120)
+            runProjectC(sessionId)
+        }
+    }
+
+    /**
+     * Feed the hungriest active pet below 50%. Existing compatible produce is preferred.
+     * Otherwise harvest one mature crop from that pet species' live MgApi diet; the resulting
+     * InventoryChanged patch re-enters this function and performs the feed.
+     */
+    private fun runProjectC(sessionId: String) {
+        val session = _state.value.sessions.find { it.id == sessionId } ?: return
+        if (!session.projectCEnabled || session.status != SessionStatus.CONNECTED) return
+
+        val target = session.pets.mapNotNull { pet ->
+            val maxHunger = MgApi.findPet(pet.species)?.coinsToFullyReplenishHunger ?: return@mapNotNull null
+            if (maxHunger <= 0) return@mapNotNull null
+            val ratio = pet.hunger / maxHunger.toDouble()
+            if (ratio < PROJECT_C_HUNGER_THRESHOLD) Triple(pet, ratio, MgApi.findPet(pet.species)?.diet.orEmpty()) else null
+        }.filter { it.third.isNotEmpty() }.minByOrNull { it.second } ?: return
+
+        val pet = target.first
+        val diet = target.third.toSet()
+
+        // Use an already harvested diet item before taking another crop out of the garden.
+        val food = session.inventory.produce.firstOrNull { it.species in diet }
+        if (food != null) {
+            clients[sessionId]?.actions?.feedPet(petItemId = pet.id, cropItemId = food.id)
+            return
+        }
+
+        // A harvest creates a new inventory slot; if there is no room, leave the garden intact.
+        if (inventorySlotCount(session) >= StorageCapacity.INVENTORY_LIMIT) return
+
+        val now = System.currentTimeMillis()
+        val readyFood = session.garden
+            .filter { it.species in diet && it.endTime > 0L && now >= it.endTime }
+            .minWithOrNull(compareBy<com.mgafk.app.data.model.GardenPlantSnapshot> { it.endTime }
+                .thenBy { it.tileId }.thenBy { it.growSlotIdx })
+
+        if (readyFood != null) {
+            clients[sessionId]?.actions?.harvestCrop(slot = readyFood.tileId, slotsIndex = readyFood.slotId)
+            return
+        }
+
+        // If a compatible crop exists but is still growing, wake exactly when the first one matures.
+        val nextMaturity = session.garden.asSequence()
+            .filter { it.species in diet }
+            .map { it.endTime }
+            .filter { it > now }
+            .minOrNull() ?: return
+        projectCJobs[sessionId]?.cancel()
+        projectCJobs[sessionId] = viewModelScope.launch {
+            delay((nextMaturity - System.currentTimeMillis()).coerceAtLeast(1L) + 50L)
+            runProjectC(sessionId)
+        }
+    }
+
     private val projectBJobs = mutableMapOf<String, Job>()
 
     fun setProjectBEnabled(sessionId: String, enabled: Boolean) {
@@ -2244,6 +2312,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 val alerts = _state.value.alerts
                 alertNotifier.checkWeather(event.weather, previousWeather, alerts)
                 alertNotifier.checkPetHunger(sessionId, newPets, alerts)
+                scheduleProjectC(sessionId)
             }
             is ClientEvent.PetTeamsChanged -> {
                 updateSession(sessionId) { it.copy(petTeams = event.teams) }
@@ -2301,6 +2370,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 NuclearLogStore.observeGarden(sessionId, newGarden)
                 scheduleProjectA(sessionId)
                 scheduleProjectB(sessionId)
+                scheduleProjectC(sessionId)
             }
             is ClientEvent.CrystalsChanged -> {
                 // Not persisted: the server reports it again on every reconnect, and it changes
@@ -2531,6 +2601,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 runAutoStock(sessionId, seeds, decors, tools, siloSeeds, shedDecors, shackTools, availableStorages)
                 scheduleProjectA(sessionId)
                 scheduleProjectB(sessionId)
+                scheduleProjectC(sessionId)
                 scheduleProjectB(sessionId)
             }
             is ClientEvent.EggsChanged -> {
