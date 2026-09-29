@@ -82,6 +82,16 @@ data class Session(
     val projectBBlockRainbow: Boolean = false,
     /** Project C: harvest an active pet's diet and feed it when hunger drops below 50%. */
     val projectCEnabled: Boolean = false,
+    /** Project D: automatic pet-team deployment by weather plus temporary action teams. */
+    val projectDEnabled: Boolean = false,
+    val projectDWeatherTeams: Map<String, Set<String>> = emptyMap(),
+    val projectDDefaultTeamId: String? = null,
+    val projectDSellingTeamId: String? = null,
+    val projectDHatchingTeamId: String? = null,
+    /** Project E: purchase every currently available shop item. */
+    val projectEEnabled: Boolean = false,
+    /** Project F: retrieve stored eggs, plant them regardless of Project A's plot reserve, hatch. */
+    val projectFEnabled: Boolean = false,
 )
 
 @Serializable
