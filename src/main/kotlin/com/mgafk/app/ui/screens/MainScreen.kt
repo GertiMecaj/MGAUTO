@@ -146,7 +146,7 @@ enum class NavSection(
     GARDEN("Garden", Icons.Outlined.Grass, requiresConnection = true),
     SHOPS("Shops", Icons.Outlined.ShoppingCart, requiresConnection = true),
     PROJECT_A("Project A", Icons.Outlined.Grass, requiresConnection = true),
-    PROJECT_B("Project B", Icons.Outlined.Agriculture, requiresConnection = true),
+    PROJECT_B("Project B", Icons.Outlined.Grass, requiresConnection = true),
     PROJECT_C("Project C", Icons.Outlined.Pets, requiresConnection = true),
     NUCLEAR("Nuclear", Icons.Outlined.Science),
     SOCIAL("Social", Icons.Outlined.People),
