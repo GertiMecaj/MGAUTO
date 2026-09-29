@@ -125,6 +125,7 @@ data class UiState(
 
 private const val PROJECT_A_RESERVED_EMPTY_PLOTS = 13
 private const val PROJECT_C_HUNGER_THRESHOLD = 0.50
+private const val PROJECT_D_TEAM_CONFIRM_TIMEOUT_MS = 7_500L
 
 class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContext = com.mgafk.app.desktop.DesktopContext.instance) {
     private val viewModelScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
@@ -744,14 +745,16 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         activateTeam(sessionId, target)
     }
 
-    private suspend fun awaitProjectDTeam(sessionId: String, teamId: String): Boolean =
-        withTimeoutOrNull(PROJECT_D_TEAM_CONFIRM_TIMEOUT_MS) {
-            _state.first { ui ->
-                val session = ui.sessions.find { it.id == sessionId } ?: return@first false
-                val team = session.petTeams.find { it.id == teamId } ?: return@first false
-                PetTeams.isActive(team, session.pets.map { it.id })
-            }
-        } != null
+    private suspend fun awaitProjectDTeam(sessionId: String, teamId: String): Boolean {
+        val deadline = System.currentTimeMillis() + PROJECT_D_TEAM_CONFIRM_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val session = _state.value.sessions.find { it.id == sessionId } ?: return false
+            val team = session.petTeams.find { it.id == teamId } ?: return false
+            if (PetTeams.isActive(team, session.pets.map { it.id })) return true
+            delay(75)
+        }
+        return false
+    }
 
     /**
      * Serializes temporary Project D roles for automation actions. A configured role team is
