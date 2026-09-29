@@ -121,6 +121,7 @@ data class UiState(
 class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContext = com.mgafk.app.desktop.DesktopContext.instance) {
     private val viewModelScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
     private companion object {
+        private const val PROJECT_A_RESERVED_EMPTY_PLOTS = 13
         const val TAG = "MainViewModel"
         /** How long a Hunger Potion pulled from the Tool Shack is awaited before giving up on using it. */
         const val POTION_RETRIEVAL_TIMEOUT_MS = 6_000L
@@ -621,6 +622,65 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         }
     }
 
+
+    private val projectAJobs = mutableMapOf<String, Job>()
+
+    fun setProjectAEnabled(sessionId: String, enabled: Boolean) {
+        updateSession(sessionId) { it.copy(projectAEnabled = enabled) }
+        if (enabled) scheduleProjectA(sessionId) else projectAJobs.remove(sessionId)?.cancel()
+    }
+
+    fun setProjectASelectedSeeds(sessionId: String, seeds: Set<String>) {
+        updateSession(sessionId) { it.copy(projectASelectedSeeds = seeds) }
+        scheduleProjectA(sessionId)
+    }
+
+    /** Debounce Project A onto the latest authoritative state after each server patch. */
+    private fun scheduleProjectA(sessionId: String) {
+        projectAJobs[sessionId]?.cancel()
+        projectAJobs[sessionId] = viewModelScope.launch {
+            delay(120)
+            runProjectA(sessionId)
+        }
+    }
+
+    /**
+     * Project A performs at most one buy and one plant decision per authoritative state cycle.
+     * Server Shop/Garden/Inventory patches schedule the next cycle, so it never relies on fixed
+     * command delays or assumes a command succeeded.
+     */
+    private fun runProjectA(sessionId: String) {
+        val session = _state.value.sessions.find { it.id == sessionId } ?: return
+        if (!session.projectAEnabled || session.status != SessionStatus.CONNECTED) return
+        val selected = session.projectASelectedSeeds
+        if (selected.isEmpty()) return
+
+        // Buy one selected seed from authoritative remaining shop stock. The next server patch
+        // confirms it and schedules another pass, eventually consuming all available stock.
+        val buyCandidate = session.shops.asSequence()
+            .flatMap { shop -> shop.itemStocks.asSequence().map { (species, stock) -> Triple(shop, species, stock) } }
+            .filter { (_, species, stock) -> species in selected && stock > 0 }
+            .maxByOrNull { (shop, species, _) ->
+                shop.purchasePrices[species] ?: MgApi.getPlants()[species]?.purchasePrice ?: 0L
+            }
+        if (buyCandidate != null) {
+            purchaseShopItem(sessionId, buyCandidate.first.type, buyCandidate.second)
+        }
+
+        // Hard reservation: Project A must never consume any of the final 13 empty dirt plots.
+        if (session.freePlantTiles <= PROJECT_A_RESERVED_EMPTY_PLOTS) return
+
+        val seedToPlant = session.inventory.seeds.asSequence()
+            .filter { it.species in selected && it.quantity > 0 }
+            .maxByOrNull { seed ->
+                val livePrice = session.shops.asSequence()
+                    .mapNotNull { it.purchasePrices[seed.species] }
+                    .maxOrNull()
+                livePrice ?: MgApi.getPlants()[seed.species]?.purchasePrice ?: 0L
+            } ?: return
+
+        plantSeed(sessionId, seedToPlant.species)
+    }
 
     fun purchaseShopItem(sessionId: String, shopType: String, itemName: String) {
         val actions = clients[sessionId]?.actions ?: return
@@ -2435,6 +2495,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                         itemNames = shop.getItemNames(),
                         itemStocks = remainingStocks,
                         initialStocks = initialStocks,
+                        purchasePrices = shop.getItemPrices(),
                         secondsUntilRestock = shop.secondsUntilRestock,
                     )
                 }
