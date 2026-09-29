@@ -142,7 +142,7 @@ fun ConnectionCard(
                 enabled = !session.connected && !session.busy,
                 shape = RoundedCornerShape(12.dp),
             ) {
-                Text("Login with Discord", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text("Login in Magic Garden", fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
             Spacer(modifier = Modifier.width(8.dp))
             OutlinedButton(
@@ -153,6 +153,11 @@ fun ConnectionCard(
                 Text("Logout", fontSize = 12.sp)
             }
         }
+        Text(
+            "Opens Magic Garden's live sign-in page and captures the mc_jwt automatically after a successful login.",
+            fontSize = 10.sp,
+            color = TextMuted,
+        )
 
         // Error message
         if (session.error.isNotBlank() && session.status == SessionStatus.ERROR) {

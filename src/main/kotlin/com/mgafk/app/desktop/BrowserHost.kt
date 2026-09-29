@@ -2,7 +2,6 @@ package com.mgafk.app.desktop
 
 import com.mgafk.app.data.AppJson
 import com.mgafk.app.data.repository.GeminiFetcher
-import com.mgafk.app.data.websocket.Constants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
@@ -16,7 +15,7 @@ object BrowserHost {
         val script = if (inject) GeminiFetcher.fetchLatest(DesktopContext.instance) ?: error("Gemini could not be downloaded. Disable Inject Gemini mod to play without it, or try again.") else ""
         val request = buildJsonObject {
             put("Mode", mode); put("Profile", profile); put("Url", url); put("Cookie", cookie)
-            put("Script", script); put("OAuth", Constants.DISCORD_OAUTH_URL)
+            put("Script", script); put("OAuth", "")
         }
         val process = ProcessBuilder(executable.absolutePath).redirectError(ProcessBuilder.Redirect.INHERIT).start()
         // Session credentials travel through a private child-process pipe, never command-line arguments.

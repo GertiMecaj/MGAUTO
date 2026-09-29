@@ -28,7 +28,7 @@ class BrowserWindow : Form {
     readonly HttpClient http = new(new HttpClientHandler { AllowAutoRedirect = true, UseCookies = false }) { Timeout = TimeSpan.FromSeconds(40) };
     public BrowserWindow(LaunchRequest request) {
         this.request = request;
-        Text = request.Mode == "login" ? "MGAUTO — Discord login" : "MGAUTO — Play Magic Garden";
+        Text = request.Mode == "login" ? "MGAUTO — Magic Garden login" : "MGAUTO — Play Magic Garden";
         Width = 1280; Height = 900; StartPosition = FormStartPosition.CenterScreen;
         Controls.Add(web); Shown += async (_,_) => await InitializeBrowser();
         FormClosed += (_,_) => { timer.Stop(); timer.Dispose(); http.Dispose(); web.Dispose(); };
@@ -74,10 +74,14 @@ class BrowserWindow : Form {
                 core.NavigateToString("<html><head><title>MGAUTO browser ready</title></head><body style='background:#0b0f14;color:#e8ecf0;font:24px Segoe UI;padding:60px'><h1>MGAUTO browser ready</h1><p>WebView2 initialized. Cookie storage and JavaScript enabled.</p></body></html>");
             } else if (request.Mode == "login") {
                 await core.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllProfile);
+                // Provider-neutral login: Magic Garden owns the live sign-in UI and may add,
+                // remove, or change providers. MGAUTO only cares about the resulting mc_jwt.
+                // Keeping these redirect cookies preserves compatibility with OAuth flows that
+                // still read them, while avoiding a hard-coded Discord authorization URL.
                 SetCookie("mc_oauth_room_id", "MgAFK", ".magicgarden.gg");
                 SetCookie("mc_oauth_redirect_uri", "https://magicgarden.gg/oauth2/redirect", ".magicgarden.gg");
                 timer.Tick += async (_,_) => await CheckLogin(); timer.Start();
-                core.Navigate(request.OAuth);
+                core.Navigate(request.Url);
             } else {
                 var target = new Uri(request.Url);
                 if (target.Scheme != "https") throw new Exception("The game URL must use HTTPS.");
