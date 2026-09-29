@@ -75,6 +75,11 @@ data class Session(
     /** Project A: automatically buy and plant selected seed species. */
     val projectAEnabled: Boolean = false,
     val projectASelectedSeeds: Set<String> = emptySet(),
+    /** Project B: harvest selected mature crop species and sell when inventory is full. */
+    val projectBEnabled: Boolean = false,
+    val projectBSelectedPlants: Set<String> = emptySet(),
+    val projectBBlockGold: Boolean = false,
+    val projectBBlockRainbow: Boolean = false,
 )
 
 @Serializable
