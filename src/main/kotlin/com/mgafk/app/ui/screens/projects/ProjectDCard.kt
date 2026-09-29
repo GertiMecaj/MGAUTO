@@ -21,6 +21,7 @@ import com.mgafk.app.data.model.PetTeam
 import com.mgafk.app.data.model.Session
 import com.mgafk.app.data.repository.MgApi
 import com.mgafk.app.data.repository.PetTeams
+import com.mgafk.app.data.websocket.Constants
 import com.mgafk.app.ui.components.AppCard
 import com.mgafk.app.ui.theme.Accent
 import com.mgafk.app.ui.theme.SurfaceBorder
@@ -75,8 +76,9 @@ fun ProjectDCard(
             Text("Create pet teams in Pets first.", color = TextMuted, fontSize = 11.sp)
         } else {
             weathers.forEach { weather ->
+                val weatherKey = Constants.formatWeather(weather.id)
                 val assigned = session.projectDWeatherTeams.entries
-                    .firstOrNull { it.key.equals(weather.id, ignoreCase = true) }?.value.orEmpty()
+                    .firstOrNull { it.key.equals(weatherKey, ignoreCase = true) }?.value.orEmpty()
                 Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Text(weather.name, color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                     session.petTeams.forEach { team ->
@@ -84,7 +86,7 @@ fun ProjectDCard(
                         Row(
                             modifier = Modifier.fillMaxWidth().clickable {
                                 onWeatherTeamsChange(
-                                    weather.id,
+                                    weatherKey,
                                     if (checked) assigned - team.id else assigned + team.id,
                                 )
                             },
@@ -93,7 +95,7 @@ fun ProjectDCard(
                                 checked = checked,
                                 onCheckedChange = { value ->
                                     onWeatherTeamsChange(
-                                        weather.id,
+                                        weatherKey,
                                         if (value) assigned + team.id else assigned - team.id,
                                     )
                                 },
