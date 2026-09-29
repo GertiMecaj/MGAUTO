@@ -32,6 +32,7 @@ import com.mgafk.app.data.model.GardenTileType
 import com.mgafk.app.data.model.PlacedCrystal
 import com.mgafk.app.data.repository.Crystals
 import com.mgafk.app.data.repository.PriceCalculator
+import com.mgafk.app.data.repository.ProjectAutomationPolicy
 import com.mgafk.app.data.model.InventoryProduceItem
 import com.mgafk.app.data.model.InventorySeedItem
 import com.mgafk.app.data.model.InventorySnapshot
@@ -124,7 +125,6 @@ data class UiState(
         get() = sessions.find { it.id == activeSessionId } ?: sessions.first()
 }
 
-private const val PROJECT_A_RESERVED_EMPTY_PLOTS = 13
 private const val PROJECT_C_HUNGER_THRESHOLD = 0.50
 private const val PROJECT_D_TEAM_CONFIRM_TIMEOUT_MS = 7_500L
 private const val PROJECT_AUTOMATION_CONFIRM_TIMEOUT_MS = 7_500L
@@ -134,7 +134,6 @@ private const val PROJECT_F_POST_HATCH_HOLD_MS = 10_000L
 class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContext = com.mgafk.app.desktop.DesktopContext.instance) {
     private val viewModelScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
     private companion object {
-        private const val PROJECT_A_RESERVED_EMPTY_PLOTS = 13
         const val TAG = "MainViewModel"
         /** How long a Hunger Potion pulled from the Tool Shack is awaited before giving up on using it. */
         const val POTION_RETRIEVAL_TIMEOUT_MS = 6_000L
@@ -722,7 +721,9 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
             return
         }
 
-        if (session.inventory.eggs.any { it.quantity > 0 } && session.freePlantTiles > 0) {
+        if (session.inventory.eggs.any { it.quantity > 0 } &&
+            ProjectAutomationPolicy.canProjectFPlant(session.freePlantTiles)
+        ) {
             if (pendingPlantJobs.keys.any { it.startsWith(sessionId + ":") }) return
             val egg = session.inventory.eggs.first { it.quantity > 0 }
             growEgg(sessionId, egg.eggId)
@@ -848,6 +849,9 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
 
     private fun baselineProjectDTeamId(session: Session): String? {
         if (!session.projectDEnabled) return null
+        if (ProjectAutomationPolicy.useDefaultTeam(session.weather)) {
+            return session.projectDDefaultTeamId?.takeIf { id -> session.petTeams.any { it.id == id } }
+        }
         val weatherIds = session.projectDWeatherTeams.entries
             .firstOrNull { it.key.equals(session.weather, ignoreCase = true) }
             ?.value
@@ -1103,8 +1107,11 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
 
         val eligible = session.garden.filter { crop ->
             crop.species in selected &&
-                !(session.projectBBlockGold && crop.mutations.any { it.equals("Gold", true) }) &&
-                !(session.projectBBlockRainbow && crop.mutations.any { it.equals("Rainbow", true) })
+                !ProjectAutomationPolicy.isHarvestBlocked(
+                    mutations = crop.mutations,
+                    blockGold = session.projectBBlockGold,
+                    blockRainbow = session.projectBBlockRainbow,
+                )
         }
         val now = System.currentTimeMillis()
         val ready = eligible
@@ -1156,6 +1163,8 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         if (!session.projectAEnabled || session.status != SessionStatus.CONNECTED) return
         val selected = session.projectASelectedSeeds
         if (selected.isEmpty()) return
+        // Project A is fully paused at the 13-plot floor: no buying and no planting.
+        if (!ProjectAutomationPolicy.canProjectAOperate(session.freePlantTiles)) return
 
         // Buy one selected seed from authoritative remaining shop stock. The next server patch
         // confirms it and schedules another pass, eventually consuming all available stock.
@@ -1169,8 +1178,6 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
             purchaseShopItem(sessionId, buyCandidate.first.type, buyCandidate.second)
         }
 
-        // Hard reservation: Project A must never consume any of the final 13 empty dirt plots.
-        if (session.freePlantTiles <= PROJECT_A_RESERVED_EMPTY_PLOTS) return
 
         val seedToPlant = session.inventory.seeds.asSequence()
             .filter { it.species in selected && it.quantity > 0 }

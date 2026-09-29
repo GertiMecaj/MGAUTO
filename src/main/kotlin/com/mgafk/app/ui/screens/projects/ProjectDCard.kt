@@ -21,7 +21,7 @@ import com.mgafk.app.data.model.PetTeam
 import com.mgafk.app.data.model.Session
 import com.mgafk.app.data.repository.MgApi
 import com.mgafk.app.data.repository.PetTeams
-import com.mgafk.app.data.websocket.Constants
+import com.mgafk.app.data.repository.ProjectAutomationPolicy
 import com.mgafk.app.ui.components.AppCard
 import com.mgafk.app.ui.theme.Accent
 import com.mgafk.app.ui.theme.SurfaceBorder
@@ -41,7 +41,9 @@ fun ProjectDCard(
     val activeIds = session.pets.map { it.id }
     val activeTeam = session.petTeams.firstOrNull { PetTeams.isActive(it, activeIds) }
     val weathers = remember(apiReady) {
-        if (!apiReady) emptyList() else MgApi.getWeathers().values.sortedBy { it.name.lowercase() }
+        if (!apiReady) emptyList() else MgApi.getWeathers().values
+            .filterNot { ProjectAutomationPolicy.useDefaultTeam(ProjectAutomationPolicy.weatherKey(it.id)) }
+            .sortedBy { it.name.lowercase() }
     }
 
     AppCard(title = "Project D — Team Auto Change") {
@@ -76,7 +78,7 @@ fun ProjectDCard(
             Text("Create pet teams in Pets first.", color = TextMuted, fontSize = 11.sp)
         } else {
             weathers.forEach { weather ->
-                val weatherKey = Constants.formatWeather(weather.id)
+                val weatherKey = ProjectAutomationPolicy.weatherKey(weather.id)
                 val assigned = session.projectDWeatherTeams.entries
                     .firstOrNull { it.key.equals(weatherKey, ignoreCase = true) }?.value.orEmpty()
                 Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
