@@ -112,6 +112,7 @@ import com.mgafk.app.ui.screens.nuclear.NuclearLogsCard
 import com.mgafk.app.ui.screens.projects.ProjectACard
 import com.mgafk.app.ui.screens.projects.ProjectBCard
 import com.mgafk.app.ui.screens.projects.ProjectCCard
+import com.mgafk.app.ui.screens.projects.ProjectDCard
 import com.mgafk.app.ui.screens.status.LiveStatusCard
 import com.mgafk.app.ui.screens.status.WeatherStationCard
 import com.mgafk.app.ui.theme.Accent
@@ -148,6 +149,7 @@ enum class NavSection(
     PROJECT_A("Project A", Icons.Outlined.Grass, requiresConnection = true),
     PROJECT_B("Project B", Icons.Outlined.Grass, requiresConnection = true),
     PROJECT_C("Project C", Icons.Outlined.Pets, requiresConnection = true),
+    PROJECT_D("Project D", Icons.Outlined.Pets, requiresConnection = true),
     NUCLEAR("Nuclear", Icons.Outlined.Science),
     SOCIAL("Social", Icons.Outlined.People),
     ALERTS("Alerts", Icons.Outlined.Notifications),
@@ -759,6 +761,17 @@ private fun SectionContent(
                 session = session,
                 apiReady = state.apiReady,
                 onEnabledChange = { viewModel.setProjectCEnabled(session.id, it) },
+            )
+        }
+        NavSection.PROJECT_D -> {
+            ProjectDCard(
+                session = session,
+                apiReady = state.apiReady,
+                onEnabledChange = { viewModel.setProjectDEnabled(session.id, it) },
+                onWeatherTeamsChange = { weather, teams -> viewModel.setProjectDWeatherTeams(session.id, weather, teams) },
+                onDefaultTeamChange = { viewModel.setProjectDDefaultTeam(session.id, it) },
+                onSellingTeamChange = { viewModel.setProjectDSellingTeam(session.id, it) },
+                onHatchingTeamChange = { viewModel.setProjectDHatchingTeam(session.id, it) },
             )
         }
         NavSection.NUCLEAR -> {

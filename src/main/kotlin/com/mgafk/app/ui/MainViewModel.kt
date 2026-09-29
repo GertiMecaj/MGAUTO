@@ -75,6 +75,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private class TokenExpiredException : Exception("Discord token expired")
 
@@ -626,6 +628,139 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         }
     }
 
+
+    private enum class ProjectDOverrideRole { SELLING, HATCHING }
+    private data class ProjectDOverrideState(
+        val role: ProjectDOverrideRole,
+        val previousTeamId: String?,
+    )
+
+    private val projectDJobs = mutableMapOf<String, Job>()
+    private val projectDOverrides = mutableMapOf<String, ProjectDOverrideState>()
+    private val projectDOverrideMutexes = mutableMapOf<String, Mutex>()
+
+    fun setProjectDEnabled(sessionId: String, enabled: Boolean) {
+        updateSession(sessionId) { it.copy(projectDEnabled = enabled) }
+        scheduleProjectD(sessionId)
+    }
+
+    fun setProjectDWeatherTeams(sessionId: String, weather: String, teamIds: Set<String>) {
+        updateSession(sessionId) { session ->
+            val next = session.projectDWeatherTeams.toMutableMap()
+            if (teamIds.isEmpty()) next.remove(weather) else next[weather] = teamIds
+            session.copy(projectDWeatherTeams = next)
+        }
+        scheduleProjectD(sessionId)
+    }
+
+    fun setProjectDDefaultTeam(sessionId: String, teamId: String?) {
+        updateSession(sessionId) { it.copy(projectDDefaultTeamId = teamId) }
+        scheduleProjectD(sessionId)
+    }
+
+    fun setProjectDSellingTeam(sessionId: String, teamId: String?) {
+        updateSession(sessionId) { it.copy(projectDSellingTeamId = teamId) }
+    }
+
+    fun setProjectDHatchingTeam(sessionId: String, teamId: String?) {
+        updateSession(sessionId) { it.copy(projectDHatchingTeamId = teamId) }
+    }
+
+    private fun scheduleProjectD(sessionId: String) {
+        projectDJobs[sessionId]?.cancel()
+        projectDJobs[sessionId] = viewModelScope.launch {
+            delay(120)
+            runProjectD(sessionId)
+        }
+    }
+
+    private fun baselineProjectDTeamId(session: Session): String? {
+        if (!session.projectDEnabled) return null
+        val weatherIds = session.projectDWeatherTeams.entries
+            .firstOrNull { it.key.equals(session.weather, ignoreCase = true) }
+            ?.value
+            .orEmpty()
+        val weatherTeam = session.petTeams.firstOrNull { it.id in weatherIds }?.id
+        return weatherTeam ?: session.projectDDefaultTeamId?.takeIf { id -> session.petTeams.any { it.id == id } }
+    }
+
+    private fun desiredProjectDTeamId(session: Session): String? {
+        val override = projectDOverrides[session.id]
+        if (override != null) {
+            val configured = when (override.role) {
+                ProjectDOverrideRole.SELLING -> session.projectDSellingTeamId
+                ProjectDOverrideRole.HATCHING -> session.projectDHatchingTeamId
+            }
+            if (configured != null && session.petTeams.any { it.id == configured }) return configured
+        }
+        return baselineProjectDTeamId(session)
+    }
+
+    private fun runProjectD(sessionId: String) {
+        val session = _state.value.sessions.find { it.id == sessionId } ?: return
+        if (session.status != SessionStatus.CONNECTED) return
+        val targetId = desiredProjectDTeamId(session) ?: return
+        if (detectActiveTeamId(sessionId) == targetId) return
+        val target = session.petTeams.find { it.id == targetId } ?: return
+        activateTeam(sessionId, target)
+    }
+
+    private suspend fun awaitProjectDTeam(sessionId: String, teamId: String): Boolean =
+        withTimeoutOrNull(PROJECT_D_TEAM_CONFIRM_TIMEOUT_MS) {
+            _state.first { ui ->
+                val session = ui.sessions.find { it.id == sessionId } ?: return@first false
+                val team = session.petTeams.find { it.id == teamId } ?: return@first false
+                PetTeams.isActive(team, session.pets.map { it.id })
+            }
+        } != null
+
+    /**
+     * Serializes temporary Project D roles for automation actions. A configured role team is
+     * applied and authoritatively confirmed before [action]. On release, current weather is
+     * re-evaluated so a weather change during the override restores the new correct baseline.
+     * If Project D itself is disabled, the previously active team is restored instead.
+     */
+    private suspend fun <T> withProjectDTeam(
+        sessionId: String,
+        role: ProjectDOverrideRole,
+        holdAfterMs: Long = 0L,
+        action: suspend () -> T,
+    ): T? {
+        val mutex = projectDOverrideMutexes.getOrPut(sessionId) { Mutex() }
+        return mutex.withLock {
+            val before = _state.value.sessions.find { it.id == sessionId } ?: return@withLock null
+            val previousTeamId = detectActiveTeamId(sessionId)
+            val roleTeamId = when (role) {
+                ProjectDOverrideRole.SELLING -> before.projectDSellingTeamId
+                ProjectDOverrideRole.HATCHING -> before.projectDHatchingTeamId
+            }?.takeIf { id -> before.petTeams.any { it.id == id } }
+
+            projectDOverrides[sessionId] = ProjectDOverrideState(role, previousTeamId)
+            try {
+                if (roleTeamId != null && detectActiveTeamId(sessionId) != roleTeamId) {
+                    clients[sessionId]?.actions?.applyPetTeam(roleTeamId)
+                    if (!awaitProjectDTeam(sessionId, roleTeamId)) {
+                        AppLog.w(TAG, "[ProjectD] Timed out confirming $role team $roleTeamId")
+                        return@withLock null
+                    }
+                }
+                val result = action()
+                if (holdAfterMs > 0L) delay(holdAfterMs)
+                result
+            } finally {
+                projectDOverrides.remove(sessionId)
+                val after = _state.value.sessions.find { it.id == sessionId }
+                if (after?.projectDEnabled == true) {
+                    scheduleProjectD(sessionId)
+                } else if (previousTeamId != null) {
+                    val previous = after?.petTeams?.find { it.id == previousTeamId }
+                    if (previous != null && detectActiveTeamId(sessionId) != previousTeamId) {
+                        clients[sessionId]?.actions?.applyPetTeam(previousTeamId)
+                    }
+                }
+            }
+        }
+    }
 
     private val projectCJobs = mutableMapOf<String, Job>()
 
@@ -2314,9 +2449,11 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 alertNotifier.checkWeather(event.weather, previousWeather, alerts)
                 alertNotifier.checkPetHunger(sessionId, newPets, alerts)
                 scheduleProjectC(sessionId)
+                scheduleProjectD(sessionId)
             }
             is ClientEvent.PetTeamsChanged -> {
                 updateSession(sessionId) { it.copy(petTeams = event.teams) }
+                scheduleProjectD(sessionId)
             }
             is ClientEvent.GardenChanged -> {
                 val newGarden = mutableListOf<GardenPlantSnapshot>()
