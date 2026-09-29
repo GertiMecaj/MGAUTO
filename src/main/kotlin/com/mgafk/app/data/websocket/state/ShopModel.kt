@@ -43,6 +43,17 @@ data class ShopModel(
             obj[key]?.jsonPrimitive?.contentOrNull
         }
 
+    /** Get item name → purchase price mapping from authoritative shop state. */
+    fun getItemPrices(): Map<String, Long> =
+        inventory.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            val itemType = obj["itemType"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val key = keyForItemType(itemType) ?: return@mapNotNull null
+            val name = obj[key]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val price = obj["purchasePrice"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: return@mapNotNull null
+            name to price
+        }.toMap()
+
     /** Get item name → initialStock mapping */
     fun getItemStocks(): Map<String, Int> =
         getAvailable().mapNotNull { obj ->
