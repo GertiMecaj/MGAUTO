@@ -1,0 +1,139 @@
+package com.mgafk.app.data.model
+
+import kotlinx.serialization.Serializable
+import java.time.LocalDateTime
+import java.util.UUID
+
+@Serializable
+enum class WakeLockMode {
+    /** Never acquire a CPU wake lock. */
+    OFF,
+    /** Acquire automatically after the screen has been off for a while, release on unlock. */
+    SMART,
+    /** Always keep the CPU wake lock while a session is running. */
+    ALWAYS,
+}
+
+@Serializable
+enum class PlantPlacementMode {
+    /** Planting by hand drops the seed on the lowest empty tile. */
+    FREE_TILE,
+    /** Planting by hand opens the garden grid and plants on the tile tapped. */
+    GRID,
+}
+
+@Serializable
+enum class PurchaseMode {
+    /** Tap buys x1, long-press buys all remaining stock. */
+    HYBRID,
+    /** Tap always buys x1. No bulk purchase. */
+    SINGLE,
+    /** Tap immediately buys all remaining stock. */
+    BULK,
+}
+
+/**
+ * One time window during which alarms are downgraded to silent notifications.
+ *
+ * `startMinute` and `endMinute` are minutes since midnight (0..1439).
+ * If `startMinute > endMinute`, the window wraps midnight; the start day
+ * (per [activeDays]) is the day used to evaluate membership.
+ *
+ * `activeDays` uses ISO day-of-week values: 1=Monday..7=Sunday.
+ *
+ * A single window shares one time range across every day it covers, which cannot
+ * express e.g. work nights and weekend lie-ins at once - hence the list in
+ * [AppSettings.alarmSchedules], where each window carries its own hours, days and
+ * [label].
+ */
+@Serializable
+data class AlarmSchedule(
+    val id: String = UUID.randomUUID().toString(),
+    val label: String = "",
+    val enabled: Boolean = false,
+    val startMinute: Int = 22 * 60, // 22:00
+    val endMinute: Int = 7 * 60,    // 07:00
+    val activeDays: Set<Int> = setOf(1, 2, 3, 4, 5, 6, 7),
+)
+
+/** True iff this single window silences alarms right now. */
+fun AlarmSchedule.isSilentAt(now: LocalDateTime): Boolean {
+    if (!enabled) return false
+    if (activeDays.isEmpty()) return false
+    val minutesNow = now.hour * 60 + now.minute
+    val today = now.dayOfWeek.value          // 1..7 ISO
+    val yesterday = ((today - 2 + 7) % 7) + 1
+    return if (startMinute <= endMinute) {
+        today in activeDays && minutesNow in startMinute until endMinute
+    } else {
+        // Window wraps midnight
+        (today in activeDays && minutesNow >= startMinute) ||
+            (yesterday in activeDays && minutesNow < endMinute)
+    }
+}
+
+/** True iff any configured window silences alarms right now. */
+fun List<AlarmSchedule>.isSilentAt(now: LocalDateTime): Boolean = any { it.isSilentAt(now) }
+
+@Serializable
+data class AppSettings(
+    // Background & Battery
+    val wifiLockEnabled: Boolean = true,
+    val wakeLockMode: WakeLockMode = WakeLockMode.ALWAYS,
+    val wakeLockAutoDelayMin: Int = 2,
+
+    // Reconnection
+    val retryDelayMs: Long = 1500,
+    val retryMaxDelayMs: Long = 60000,
+    val retrySupersededDelayMs: Long = 30000,
+    val notifyOnDisconnect: Boolean = false,
+
+    // Shops
+    val purchaseMode: PurchaseMode = PurchaseMode.BULK,
+
+    // Garden - where a seed or a potted plant lands when planted by hand
+    val plantPlacementMode: PlantPlacementMode = PlantPlacementMode.FREE_TILE,
+
+    // Storages - auto-consolidate inventory stacks into matching storage slots
+    val autoStockSeedSilo: Boolean = false,
+    val autoStockDecorShed: Boolean = false,
+    val autoStockToolShack: Boolean = false,
+
+    // Play in game - inject the Gemini userscript into the WebView
+    val injectGeminiMod: Boolean = true,
+
+    // Gameplay - skip the egg-opening animation and show the hatched pet
+    // result instantly. Off by default so the animation plays.
+    val instantHatch: Boolean = false,
+
+    // Alarm sound URI (RingtoneManager). Empty = system default alarm.
+    val alarmSoundUri: String = "",
+
+    // App-side alarm volume multiplier (0..1). Multiplied on top of the system alarm stream volume.
+    val alarmVolume: Float = 1f,
+
+    // Alarm silence windows (alarms downgraded to silent notifications while one is active)
+    val alarmSchedules: List<AlarmSchedule> = emptyList(),
+    /** Pre-multi-window setting. Read once by [migrated] and then left null - never read it
+     * directly, the live value is [alarmSchedules]. */
+    val alarmSchedule: AlarmSchedule? = null,
+
+    // Developer
+    val showDebugMenu: Boolean = false,
+)
+
+/**
+ * Folds settings persisted by an older build into their current shape. Stored JSON is
+ * decoded with `ignoreUnknownKeys`, so a field that simply changed name would come back
+ * as its default and silently drop what the user had configured.
+ *
+ * Carries the single pre-multi-window alarm schedule over as the first window.
+ */
+fun AppSettings.migrated(): AppSettings {
+    val legacy = alarmSchedule ?: return this
+    if (alarmSchedules.isNotEmpty()) return copy(alarmSchedule = null)
+    return copy(
+        alarmSchedules = listOf(legacy.copy(label = legacy.label.ifBlank { "Schedule 1" })),
+        alarmSchedule = null,
+    )
+}

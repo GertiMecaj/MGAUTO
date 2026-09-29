@@ -1,0 +1,7 @@
+.gradle/
+build/
+resources/windows/browser/
+browser/bin/
+browser/obj/
+*.log
+.idea/

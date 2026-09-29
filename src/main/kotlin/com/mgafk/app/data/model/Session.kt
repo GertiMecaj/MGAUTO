@@ -1,0 +1,301 @@
+package com.mgafk.app.data.model
+
+import com.mgafk.app.data.repository.PriceCalculator
+import kotlinx.serialization.Serializable
+import java.util.UUID
+
+@Serializable
+data class Session(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String = "Session 1",
+    val autoName: Boolean = true,
+    val cookie: String = "",
+    val room: String = "",
+    val gameUrl: String = "magicgarden.gg",
+    val reconnect: ReconnectConfig = ReconnectConfig(),
+    val connected: Boolean = false,
+    /**
+     * User intent: should this session be connected? Survives process death
+     * (unlike [connected]) so the app can auto-reconnect on launch / boot /
+     * service restart. Flipped on by [connect], off by explicit [disconnect].
+     */
+    val wantConnected: Boolean = false,
+    val busy: Boolean = false,
+    val status: SessionStatus = SessionStatus.IDLE,
+    val error: String = "",
+    val reconnectCountdown: String = "",
+    val players: Int = 0,
+    val connectedAt: Long = 0,
+    val playerId: String = "",
+    val playerName: String = "",
+    val roomId: String = "",
+    val weather: String = "",
+    val pets: List<PetSnapshot> = emptyList(),
+    val logs: List<AbilityLog> = emptyList(),
+    val shops: List<ShopSnapshot> = emptyList(),
+    val garden: List<GardenPlantSnapshot> = emptyList(),
+    val gardenEggs: List<GardenEggSnapshot> = emptyList(),
+    val inventory: InventorySnapshot = InventorySnapshot(),
+    val seedSilo: List<InventorySeedItem> = emptyList(),
+    val decorShed: List<InventoryDecorItem> = emptyList(),
+    val petHutch: List<InventoryPetItem> = emptyList(),
+    val feedingTrough: List<InventoryCropsItem> = emptyList(),
+    val toolShack: List<InventoryToolItem> = emptyList(),
+    val chatMessages: List<ChatMessage> = emptyList(),
+    val playersList: List<PlayerSnapshot> = emptyList(),
+    val gameVersion: String = "",
+    val freePlantTiles: Int = 0,
+    /** Crystals standing in the garden, on the dirt and on the boardwalk alike. */
+    val crystals: List<PlacedCrystal> = emptyList(),
+    /** Every tile of either map that already holds something, crystals included. */
+    val occupiedTiles: Set<GardenTileRef> = emptySet(),
+    /**
+     * When [crystals] was last read off the wire. Their remaining time only counts down while
+     * the player is in the room, so a live countdown measures from here and stops on a drop.
+     */
+    val crystalsReadAtMs: Long = 0L,
+    val favoritedItemIds: Set<String> = emptySet(),
+    val lastHatchedPet: InventoryPetItem? = null,
+    val lastHatchedEggId: String = "",
+    val wsLogs: List<WsLog> = emptyList(),
+    val magicDust: Double = 0.0,
+    /** Max item capacity reported by the game ("capacitySlots" on the storage). */
+    val hutchCapacitySlots: Int = PriceCalculator.HUTCH_BASE_CAPACITY,
+    val siloCapacitySlots: Int = PriceCalculator.SILO_BASE_CAPACITY,
+    val decorShedCapacitySlots: Int = PriceCalculator.DECOR_SHED_BASE_CAPACITY,
+    val toolShackCapacitySlots: Int = PriceCalculator.TOOL_SHACK_BASE_CAPACITY,
+    /** Storage decor ids the player currently owns (e.g. "SeedSilo", "DecorShed", "PetHutch"). */
+    val availableStorages: Set<String> = emptySet(),
+    /** Player id of the room host (empty until known). Used to gate Populate. */
+    val hostPlayerId: String = "",
+    /** Guest-bot snapshots currently active for this session. */
+    val bots: List<BotSnapshot> = emptyList(),
+    /** Per-session saved pet teams (reference account-specific pet ids). */
+    val petTeams: List<PetTeam> = emptyList(),
+)
+
+@Serializable
+enum class SessionStatus { IDLE, CONNECTING, CONNECTED, ERROR }
+
+@Serializable
+data class ReconnectConfig(
+    val unknown: Boolean = true,
+    val delays: ReconnectDelays = ReconnectDelays(),
+    val codes: Map<Int, Boolean> = mapOf(
+        4100 to true, 4200 to true, 4250 to true, 4300 to true,
+        4310 to true, 4400 to true, 4500 to true, 4700 to true,
+        4710 to true, 4800 to true,
+    ),
+)
+
+@Serializable
+data class ReconnectDelays(
+    val supersededMs: Long = 30000,
+    val otherMs: Long = 1500,
+    val maxDelayMs: Long = 60000,
+)
+
+/** Serializable snapshot of a pet for Session persistence */
+@Serializable
+data class PetSnapshot(
+    val id: String = "",
+    val name: String = "",
+    val species: String = "",
+    val hunger: Double = 0.0,
+    val index: Int = 0,
+    val mutations: List<String> = emptyList(),
+    val xp: Double = 0.0,
+    val targetScale: Double = 1.0,
+    val abilities: List<String> = emptyList(),
+)
+
+@Serializable
+data class AbilityLog(
+    val id: String = UUID.randomUUID().toString(),
+    val timestamp: Long = 0,
+    val action: String = "",
+    val petName: String = "",
+    val petSpecies: String = "",
+    val petMutations: List<String> = emptyList(),
+    val slotIndex: Int = 0,
+    val params: Map<String, String> = emptyMap(),
+)
+
+/** Inventory snapshot */
+@Serializable
+data class InventorySnapshot(
+    val seeds: List<InventorySeedItem> = emptyList(),
+    val eggs: List<InventoryEggItem> = emptyList(),
+    val produce: List<InventoryProduceItem> = emptyList(),
+    val plants: List<InventoryPlantItem> = emptyList(),
+    val pets: List<InventoryPetItem> = emptyList(),
+    val tools: List<InventoryToolItem> = emptyList(),
+    val decors: List<InventoryDecorItem> = emptyList(),
+)
+
+@Serializable
+data class InventorySeedItem(
+    val species: String = "",
+    val quantity: Int = 0,
+)
+
+@Serializable
+data class InventoryEggItem(
+    val eggId: String = "",
+    val quantity: Int = 0,
+)
+
+@Serializable
+data class InventoryProduceItem(
+    val id: String = "",
+    val species: String = "",
+    /** Whole 50..100, see CropSize. */
+    val size: Int = com.mgafk.app.data.repository.CropSize.MIN,
+    val mutations: List<String> = emptyList(),
+)
+
+@Serializable
+data class InventoryPlantSlot(
+    val species: String = "",
+    /** Whole 50..100, see CropSize. */
+    val size: Int = com.mgafk.app.data.repository.CropSize.MIN,
+    val mutations: List<String> = emptyList(),
+)
+
+@Serializable
+data class InventoryPlantItem(
+    val id: String = "",
+    val species: String = "",
+    val growSlots: Int = 0,
+    val totalPrice: Long = 0,
+    val slots: List<InventoryPlantSlot> = emptyList(),
+)
+
+@Serializable
+data class InventoryCropsItem(
+    val id: String = "",
+    val species: String = "",
+    /** Whole 50..100, see CropSize. */
+    val size: Int = com.mgafk.app.data.repository.CropSize.MIN,
+    val mutations: List<String> = emptyList(),
+)
+
+@Serializable
+data class InventoryPetItem(
+    val id: String = "",
+    val petSpecies: String = "",
+    val name: String? = null,
+    val xp: Double = 0.0,
+    val targetScale: Double = 0.0,
+    val mutations: List<String> = emptyList(),
+    val abilities: List<String> = emptyList(),
+    val sourceEggId: String = "",
+)
+
+@Serializable
+data class InventoryToolItem(
+    val toolId: String = "",
+    val quantity: Int = 0,
+    /**
+     * Set only for the tools the game tracks one by one rather than as a stack, which today
+     * means a crystal shard that was picked back up. [PlaceCrystal] addresses those by id.
+     */
+    val id: String? = null,
+    /** Time left on a picked-up crystal shard; absent on a fresh one out of a stack. */
+    val remainingActiveSeconds: Int? = null,
+) {
+    /**
+     * How the storage commands name this tool.
+     *
+     * The game keys a tool by its toolId while it sits in a stack, and by its own id once it
+     * tracks the item individually, which is what a crystal shard becomes after being picked
+     * back up. Sending the toolId for one of those matches nothing and the move does nothing.
+     */
+    val storageKey: String get() = id ?: toolId
+
+    /** Whether this tool merges into a matching stack, or needs a slot of its own. */
+    val isStackable: Boolean get() = id == null
+}
+
+@Serializable
+data class InventoryDecorItem(
+    val decorId: String = "",
+    val quantity: Int = 0,
+)
+
+/** Player snapshot for room player list */
+@Serializable
+data class PlayerSnapshot(
+    val id: String = "",
+    val name: String = "",
+    val isConnected: Boolean = false,
+    val coins: Double = 0.0,
+    val color: String = "",
+    val avatarBottom: String = "",
+    val avatarMid: String = "",
+    val avatarTop: String = "",
+    val avatarExpression: String = "",
+)
+
+/** Chat message snapshot */
+@Serializable
+data class ChatMessage(
+    val timestamp: Long = 0,
+    val playerId: String = "",
+    val playerName: String = "",
+    val message: String = "",
+)
+
+/** Serializable snapshot of a garden egg for Session persistence */
+@Serializable
+data class GardenEggSnapshot(
+    val tileId: Int = 0,
+    val eggId: String = "",
+    val plantedAt: Long = 0,
+    val maturedAt: Long = 0,
+)
+
+/** Serializable snapshot of a garden plant for Session persistence */
+@Serializable
+data class GardenPlantSnapshot(
+    val tileId: Int = 0,
+    /**
+     * Legacy field used by the existing Garden UI/actions. Kept for backwards compatibility.
+     * It mirrors the server's explicit slotId when one is present.
+     */
+    val slotIndex: Int = 0,
+    /** Position of this crop inside the plant's slots[] array. */
+    val growSlotIdx: Int = 0,
+    /** Explicit slotId carried by the server; this can differ from growSlotIdx. */
+    val slotId: Int = 0,
+    val species: String = "",
+    /** Whole 50..100, see CropSize. */
+    val size: Int = com.mgafk.app.data.repository.CropSize.MIN,
+    val mutations: List<String> = emptyList(),
+    val startTime: Long = 0,
+    val endTime: Long = 0,
+    /**
+     * Preserved at the Preservation Station: the game's weather passes skip such a crop, so
+     * its mutations are locked in and can no longer change.
+     */
+    val preserved: Boolean = false,
+)
+
+/** Serializable snapshot of a shop for Session persistence */
+@Serializable
+data class ShopSnapshot(
+    val type: String = "",
+    val itemNames: List<String> = emptyList(),
+    val itemStocks: Map<String, Int> = emptyMap(),
+    val initialStocks: Map<String, Int> = emptyMap(),
+    val secondsUntilRestock: Int = 0,
+)
+
+/** WebSocket debug log entry */
+@Serializable
+data class WsLog(
+    val timestamp: Long = System.currentTimeMillis(),
+    val level: String = "info",
+    val event: String = "",
+    val detail: String = "",
+)

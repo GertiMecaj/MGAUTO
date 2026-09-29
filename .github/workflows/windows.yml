@@ -1,0 +1,65 @@
+name: Windows executable
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build browser host
+        run: dotnet publish browser/MGAUTO.Browser.csproj -c Release -r win-x64 --self-contained true -o resources/windows/browser
+      - name: Browser host smoke test
+        shell: pwsh
+        run: |
+          $p = Start-Process resources/windows/browser/MGAUTO.Browser.exe -ArgumentList '--self-test' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Browser host self-test failed' }
+      - name: Compile and test desktop
+        run: gradle --no-daemon test createDistributable
+      - name: Launch packaged Windows application
+        shell: pwsh
+        run: |
+          $exe = 'build/compose/binaries/main/app/MGAUTO/MGAUTO.exe'
+          $p = Start-Process $exe -ArgumentList '--smoke-test' -PassThru -WorkingDirectory $pwd
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'Desktop smoke test timed out' }
+          if ($p.ExitCode -ne 0) { throw "Desktop failed: $($p.ExitCode)" }
+          if (-not (Test-Path smoke-result.txt)) { throw 'Desktop did not render' }
+      - name: Build installer
+        run: gradle --no-daemon packageExe
+      - name: Package portable version
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/compose/binaries/main/app/MGAUTO -DestinationPath MGAUTO-Windows-Portable.zip
+          Get-FileHash build/compose/binaries/main/exe/*.exe, MGAUTO-Windows-Portable.zip -Algorithm SHA256 | Format-Table -AutoSize | Out-File SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MGAUTO-Windows
+          path: |
+            build/compose/binaries/main/exe/*.exe
+            MGAUTO-Windows-Portable.zip
+            SHA256SUMS.txt
+            smoke-*.png
+            smoke-result.txt
+            build/reports/tests/
+      - name: Publish Windows download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "windows-1.0.${{ github.run_number }}"
+          gh release create $tag build/compose/binaries/main/exe/*.exe MGAUTO-Windows-Portable.zip SHA256SUMS.txt --title "MGAUTO Windows $tag" --notes "Windows x64 desktop build. Installer includes Java and the browser helper. Microsoft Edge WebView2 Runtime is required for Discord login and Play in game. Automated unit tests and packaged-window launch test passed. Live account gameplay requires your login."
