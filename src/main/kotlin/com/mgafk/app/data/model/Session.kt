@@ -80,6 +80,8 @@ data class Session(
     val projectBSelectedPlants: Set<String> = emptySet(),
     val projectBBlockGold: Boolean = false,
     val projectBBlockRainbow: Boolean = false,
+    /** Project C: harvest an active pet's diet and feed it when hunger drops below 50%. */
+    val projectCEnabled: Boolean = false,
 )
 
 @Serializable
