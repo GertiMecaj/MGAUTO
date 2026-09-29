@@ -37,7 +37,6 @@ import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.MeetingRoom
 import androidx.compose.material.icons.outlined.Pets
 import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.Biotech
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.outlined.Science
@@ -94,7 +93,6 @@ import com.mgafk.app.ui.screens.room.ChatCard
 import com.mgafk.app.ui.screens.room.PlayersCard
 import com.mgafk.app.ui.screens.room.PopulateCard
 import com.mgafk.app.ui.screens.logs.AbilityLogsCard
-import com.mgafk.app.ui.screens.lab.DnaCard
 import com.mgafk.app.data.repository.Crystals
 import com.mgafk.app.ui.screens.garden.CrystalsCard
 import com.mgafk.app.ui.screens.garden.EggsCard
@@ -144,7 +142,6 @@ enum class NavSection(
     STORAGE("Storage", Icons.Outlined.Inventory2, requiresConnection = true),
     GARDEN("Garden", Icons.Outlined.Grass, requiresConnection = true),
     SHOPS("Shops", Icons.Outlined.ShoppingCart, requiresConnection = true),
-    LAB("LAB", Icons.Outlined.Biotech, requiresConnection = true),
     NUCLEAR("Nuclear", Icons.Outlined.Science),
     SOCIAL("Social", Icons.Outlined.People),
     ALERTS("Alerts", Icons.Outlined.Notifications),
@@ -732,22 +729,6 @@ private fun SectionContent(
                 onBuy = { shopType, itemName -> viewModel.purchaseShopItem(session.id, shopType, itemName) },
                 onBuyAll = { shopType, itemName -> viewModel.purchaseAllShopItem(session.id, shopType, itemName) },
             )
-        }
-        NavSection.LAB -> {
-            if (isVisible) {
-                DnaCard(
-                    session = session,
-                    onInject = { tileObjectIdx, growSlotIdx, slotId, mutation ->
-                        viewModel.injectMutation(
-                            sessionId = session.id,
-                            tileObjectIdx = tileObjectIdx,
-                            growSlotIdx = growSlotIdx,
-                            slotId = slotId,
-                            mutation = mutation,
-                        )
-                    },
-                )
-            }
         }
         NavSection.NUCLEAR -> {
             // This screen is intentionally not kept alive off-screen. A live collector here
