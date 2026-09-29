@@ -118,6 +118,8 @@ data class UiState(
         get() = sessions.find { it.id == activeSessionId } ?: sessions.first()
 }
 
+private const val PROJECT_A_RESERVED_EMPTY_PLOTS = 13
+
 class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContext = com.mgafk.app.desktop.DesktopContext.instance) {
     private val viewModelScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main)
     private companion object {
