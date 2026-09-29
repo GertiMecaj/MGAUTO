@@ -172,6 +172,7 @@ fun InventoryCard(
     toolShackMax: Int = 10,
     toolShackToolIds: Set<String> = emptySet(),
     onPlantSeed: (species: String) -> Unit = {},
+    onDeleteSeed: (species: String) -> Unit = {},
     onGrowEgg: (eggId: String) -> Unit = {},
     onPlantGardenPlant: (itemId: String) -> Unit = {},
     onToggleLock: (itemId: String) -> Unit = {},
@@ -386,6 +387,11 @@ fun InventoryCard(
                     stackExists = species in seedSiloSpecies,
                 ),
                 onPlantSeed = { onPlantSeed(species) },
+                onDeleteSeed = {
+                    onDeleteSeed(species)
+                    selectedSeedSpecies = null
+                },
+                shovelCount = inventory.tools.find { it.toolId == "Shovel" }?.quantity ?: 0,
                 onToggleLock = { onToggleLock(species) },
                 onMoveToSilo = {
                     onMoveSeedToSilo(species)
@@ -1248,6 +1254,8 @@ private fun SeedDetailDialog(
     hasSeedSilo: Boolean,
     canMoveToSilo: Boolean,
     onPlantSeed: () -> Unit,
+    onDeleteSeed: () -> Unit,
+    shovelCount: Int,
     onToggleLock: () -> Unit,
     onMoveToSilo: () -> Unit,
     onDismiss: () -> Unit,
@@ -1345,6 +1353,31 @@ private fun SeedDetailDialog(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (canPlant) Color.White else Color.White.copy(alpha = 0.4f),
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = onDeleteSeed,
+                enabled = canPlant && shovelCount > 0,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFEF4444),
+                    disabledContainerColor = Color(0xFFEF4444).copy(alpha = 0.2f),
+                    disabledContentColor = Color.White.copy(alpha = 0.4f),
+                ),
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                Text(
+                    when {
+                        !canPlant -> "Delete — no free tiles"
+                        shovelCount <= 0 -> "Delete — no shovel"
+                        else -> "Delete Seed"
+                    },
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (canPlant && shovelCount > 0) Color.White else Color.White.copy(alpha = 0.4f),
                 )
             }
 

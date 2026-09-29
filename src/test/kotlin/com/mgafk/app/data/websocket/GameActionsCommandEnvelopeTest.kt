@@ -171,6 +171,15 @@ class GameActionsCommandEnvelopeTest {
         assertNull(msg["species"])
     }
 
+    @Test fun `shovel removal carries the exact planted slot and object type`() {
+        actions.removeGardenObject(slot = 17, slotType = "plant")
+
+        assertWrapped("RemoveGardenObject")
+        val command = lastCommand()
+        assertEquals(17, command["slot"]?.jsonPrimitive?.intOrNull)
+        assertEquals("plant", command["slotType"]?.jsonPrimitive?.contentOrNull)
+    }
+
     @Test fun `every other gameplay action is wrapped as well`() {
         actions.feedPet(petItemId = "pet_1", cropItemId = "crop_1")
         assertWrapped("FeedPet")

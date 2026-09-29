@@ -693,6 +693,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
     }
 
     private fun runProjectF(sessionId: String) {
+        if (seedDeleteJobs[sessionId]?.isActive == true) return
         if (projectFActionJobs[sessionId]?.isActive == true) return
         if (pendingGrowEggJobs.keys.any { it.startsWith(sessionId + ":") }) return
 
@@ -1179,6 +1180,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
      * command delays or assumes a command succeeded.
      */
     private fun runProjectA(sessionId: String) {
+        if (seedDeleteJobs[sessionId]?.isActive == true) return
         val session = _state.value.sessions.find { it.id == sessionId } ?: return
         if (!session.projectAEnabled || session.status != SessionStatus.CONNECTED) return
         val selected = session.projectASelectedSeeds
@@ -2355,7 +2357,83 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         }
     }
 
+    private val seedDeleteJobs = mutableMapOf<String, Job>()
     private val pendingPlantJobs = mutableMapOf<String, Job>()
+
+    private fun confirmedSeedPlantOnTile(client: RoomClient, tileId: Int, species: String): Boolean {
+        val tile = client.gameState.getPlayer(client.playerId)
+            ?.getGardenTiles()
+            ?.get(tileId.toString()) as? JsonObject
+            ?: return false
+        if (tile["objectType"]?.jsonPrimitive?.contentOrNull != "plant") return false
+        if (tile["species"]?.jsonPrimitive?.contentOrNull == species) return true
+        return (tile["slots"] as? JsonArray)
+            ?.any { slot ->
+                (slot as? JsonObject)
+                    ?.get("species")
+                    ?.jsonPrimitive
+                    ?.contentOrNull == species
+            } == true
+    }
+
+    private suspend fun awaitSeedDeleteState(
+        client: RoomClient,
+        timeoutMs: Long = PROJECT_AUTOMATION_CONFIRM_TIMEOUT_MS,
+        predicate: () -> Boolean,
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (predicate()) return true
+            delay(75)
+        }
+        return false
+    }
+
+    /**
+     * Deletes exactly one seed using the same two game actions a player would:
+     * plant it onto a verified empty dirt tile, then shovel that confirmed plant away.
+     * No fixed delay is used between commands; each step waits for authoritative state.
+     */
+    fun deleteSeed(sessionId: String, species: String) {
+        if (seedDeleteJobs[sessionId]?.isActive == true) return
+        val client = clients[sessionId] ?: return
+        val session = _state.value.sessions.find { it.id == sessionId } ?: return
+        if ((session.inventory.seeds.find { it.species == species }?.quantity ?: 0) <= 0) return
+        if ((session.inventory.tools.find { it.toolId == "Shovel" }?.quantity ?: 0) <= 0) return
+        val tileId = findFirstFreePlantTile(client) ?: return
+
+        seedDeleteJobs[sessionId] = viewModelScope.launch {
+            try {
+                AppLog.d(TAG, "[DeleteSeed] Planting $species temporarily on tile $tileId")
+                client.actions.plantSeed(slot = tileId, species = species)
+
+                val planted = awaitSeedDeleteState(client) {
+                    confirmedSeedPlantOnTile(client, tileId, species)
+                }
+                if (!planted) {
+                    AppLog.w(TAG, "[DeleteSeed] Plant was not confirmed: $species tile=$tileId")
+                    return@launch
+                }
+
+                AppLog.d(TAG, "[DeleteSeed] Shoveling $species from tile $tileId")
+                client.actions.removeGardenObject(slot = tileId, slotType = "plant")
+
+                val removed = awaitSeedDeleteState(client) {
+                    val tile = client.gameState.getPlayer(client.playerId)
+                        ?.getGardenTiles()
+                        ?.get(tileId.toString()) as? JsonObject
+                    tile == null
+                }
+                if (!removed) {
+                    AppLog.w(TAG, "[DeleteSeed] Shovel removal was not confirmed: $species tile=$tileId")
+                }
+            } finally {
+                seedDeleteJobs.remove(sessionId)
+                scheduleProjectA(sessionId)
+                scheduleProjectF(sessionId)
+            }
+        }
+    }
 
     /**
      * Plant a seed with optimistic update, on [tileId] when the player picked one, otherwise on

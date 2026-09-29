@@ -869,6 +869,7 @@ private fun SectionContent(
                     if (plantOnGrid) manualPlantTarget = ManualPlantTarget.Seed(species)
                     else viewModel.plantSeed(session.id, species)
                 },
+                onDeleteSeed = { species -> viewModel.deleteSeed(session.id, species) },
                 onGrowEgg = { eggId -> viewModel.growEgg(session.id, eggId) },
                 onPlantGardenPlant = { itemId ->
                     if (plantOnGrid) manualPlantTarget = ManualPlantTarget.Pot(itemId)
