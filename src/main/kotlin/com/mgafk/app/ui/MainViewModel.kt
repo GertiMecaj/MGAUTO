@@ -5,6 +5,7 @@ import com.mgafk.app.data.NuclearLogStore
 import com.mgafk.app.data.model.AlertConfig
 import com.mgafk.app.data.model.AlertMode
 import com.mgafk.app.data.model.AppSettings
+import com.mgafk.app.data.repository.StorageCapacity
 import com.mgafk.app.data.repository.CropSize
 import com.mgafk.app.data.repository.PetTeams
 import com.mgafk.app.data.repository.GardenTiles
@@ -624,6 +625,82 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         }
     }
 
+
+    private val projectBJobs = mutableMapOf<String, Job>()
+
+    fun setProjectBEnabled(sessionId: String, enabled: Boolean) {
+        updateSession(sessionId) { it.copy(projectBEnabled = enabled) }
+        if (enabled) scheduleProjectB(sessionId) else projectBJobs.remove(sessionId)?.cancel()
+    }
+
+    fun setProjectBSelectedPlants(sessionId: String, plants: Set<String>) {
+        updateSession(sessionId) { it.copy(projectBSelectedPlants = plants) }
+        scheduleProjectB(sessionId)
+    }
+
+    fun setProjectBBlockGold(sessionId: String, block: Boolean) {
+        updateSession(sessionId) { it.copy(projectBBlockGold = block) }
+        scheduleProjectB(sessionId)
+    }
+
+    fun setProjectBBlockRainbow(sessionId: String, block: Boolean) {
+        updateSession(sessionId) { it.copy(projectBBlockRainbow = block) }
+        scheduleProjectB(sessionId)
+    }
+
+    private fun inventorySlotCount(session: Session): Int = session.inventory.run {
+        seeds.size + eggs.size + produce.size + plants.size + pets.size + tools.size + decors.size
+    }
+
+    private fun scheduleProjectB(sessionId: String) {
+        projectBJobs[sessionId]?.cancel()
+        projectBJobs[sessionId] = viewModelScope.launch {
+            delay(120)
+            runProjectB(sessionId)
+        }
+    }
+
+    /**
+     * Project B is confirmation-driven: it issues at most one harvest per state cycle. A
+     * Garden/Inventory patch confirms the result and schedules the next crop. If nothing is
+     * mature yet, one wake-up is scheduled for the nearest selected crop's endTime.
+     */
+    private fun runProjectB(sessionId: String) {
+        val session = _state.value.sessions.find { it.id == sessionId } ?: return
+        if (!session.projectBEnabled || session.status != SessionStatus.CONNECTED) return
+        val selected = session.projectBSelectedPlants
+        if (selected.isEmpty()) return
+
+        // Harvesting into a full 100-slot inventory would be rejected. Sell harvested produce
+        // first, then wait for the authoritative InventoryChanged patch before harvesting again.
+        if (inventorySlotCount(session) >= StorageCapacity.INVENTORY_LIMIT) {
+            if (session.inventory.produce.isNotEmpty()) clients[sessionId]?.actions?.sellAllCrops()
+            return
+        }
+
+        val eligible = session.garden.filter { crop ->
+            crop.species in selected &&
+                !(session.projectBBlockGold && crop.mutations.any { it.equals("Gold", true) }) &&
+                !(session.projectBBlockRainbow && crop.mutations.any { it.equals("Rainbow", true) })
+        }
+        val now = System.currentTimeMillis()
+        val ready = eligible
+            .filter { it.endTime > 0L && now >= it.endTime }
+            .sortedWith(compareBy<com.mgafk.app.data.model.GardenPlantSnapshot> { it.tileId }.thenBy { it.growSlotIdx })
+            .firstOrNull()
+
+        if (ready != null) {
+            clients[sessionId]?.actions?.harvestCrop(slot = ready.tileId, slotsIndex = ready.slotId)
+            return
+        }
+
+        val nextMaturity = eligible.asSequence().map { it.endTime }.filter { it > now }.minOrNull() ?: return
+        projectBJobs[sessionId]?.cancel()
+        projectBJobs[sessionId] = viewModelScope.launch {
+            delay((nextMaturity - System.currentTimeMillis()).coerceAtLeast(1L) + 50L)
+            runProjectB(sessionId)
+        }
+    }
 
     private val projectAJobs = mutableMapOf<String, Job>()
 
@@ -2223,6 +2300,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 updateSession(sessionId) { it.copy(garden = newGarden, freePlantTiles = freeTiles) }
                 NuclearLogStore.observeGarden(sessionId, newGarden)
                 scheduleProjectA(sessionId)
+                scheduleProjectB(sessionId)
             }
             is ClientEvent.CrystalsChanged -> {
                 // Not persisted: the server reports it again on every reconnect, and it changes
@@ -2452,6 +2530,8 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 scheduleTroughAlertCheck(sessionId)
                 runAutoStock(sessionId, seeds, decors, tools, siloSeeds, shedDecors, shackTools, availableStorages)
                 scheduleProjectA(sessionId)
+                scheduleProjectB(sessionId)
+                scheduleProjectB(sessionId)
             }
             is ClientEvent.EggsChanged -> {
                 val newEggs = event.eggs.map { tile ->
