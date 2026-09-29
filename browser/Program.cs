@@ -90,7 +90,7 @@ class BrowserWindow : Form {
                     string version = Regex.Match(request.Script, @"(?m)^\s*//\s*@version\s+(\S+)").Groups[1].Value;
                     var info = JsonSerializer.Serialize(new { scriptHandler = "MGAUTO", version, script = new { name = "Gemini", version, @namespace = "mgafk" } });
                     // Origin check prevents exposing the native request bridge to Discord or external pages.
-                    string injection = "if (location.origin === " + JsonSerializer.Serialize(target.GetLeftPart(UriPartial.Authority)) + ") { window.GM_info = " + info + ";" + poly + "\n" + request.Script + "\n}";
+                    string injection = "if (location.origin === " + JsonSerializer.Serialize(target.GetLeftPart(UriPartial.Authority)) + ") { window.GM_info = " + info + ";" + poly + "\nwindow.addEventListener('load', function() {\n" + request.Script + "\n}, {once:true});\n}";
                     await core.AddScriptToExecuteOnDocumentCreatedAsync(injection);
                     core.WebMessageReceived += async (_,e) => await HandleRequest(e, target.Host);
                 }

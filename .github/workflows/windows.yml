@@ -45,7 +45,7 @@ jobs:
           Write-Output $output
           if ($p.ExitCode -ne 0 -or -not (Test-Path smoke-browser-result.txt)) { throw 'Browser smoke test failed' }
       - name: Compile and test desktop
-        run: gradle --no-daemon -PappVersion=1.0.${{ github.run_number }} test createDistributable
+        run: gradle --no-daemon "-PappVersion=1.0.${{ github.run_number }}" test createDistributable
       - name: Launch packaged Windows application
         shell: pwsh
         run: |
@@ -55,7 +55,7 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "Desktop failed: $($p.ExitCode)" }
           if (-not (Test-Path smoke-result.txt)) { throw 'Desktop did not render' }
       - name: Build installer
-        run: gradle --no-daemon -PappVersion=1.0.${{ github.run_number }} packageExe
+        run: gradle --no-daemon "-PappVersion=1.0.${{ github.run_number }}" packageExe
       - name: Package portable version
         shell: pwsh
         run: |
