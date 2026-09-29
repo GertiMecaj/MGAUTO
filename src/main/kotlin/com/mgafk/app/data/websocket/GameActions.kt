@@ -169,6 +169,15 @@ class GameActions(
             MgApi.getDecors().containsKey(itemId) -> "Decor"
             else -> return
         }
+        purchaseShopItem(shop, itemType, itemId)
+    }
+
+    /**
+     * Current game bundles require viewMode on PurchaseShopItem. Without it the server
+     * returns invalid_message and no purchase is applied. MGAUTO has no separate shop
+     * presentation state, so use the same accepted "list" value as the Android client.
+     */
+    internal fun purchaseShopItem(shop: String, itemType: String, itemId: String) {
         val idField = when (itemType) {
             "Seed" -> "species"
             "Tool" -> "toolId"
@@ -178,6 +187,7 @@ class GameActions(
         }
         val params = buildJsonObject {
             put("shop", JsonPrimitive(shop))
+            put("viewMode", JsonPrimitive("list"))
             put("item", buildJsonObject {
                 put("itemType", JsonPrimitive(itemType))
                 put(idField, JsonPrimitive(itemId))

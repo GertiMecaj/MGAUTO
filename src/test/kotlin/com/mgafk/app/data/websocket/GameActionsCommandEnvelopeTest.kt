@@ -352,6 +352,21 @@ class GameActionsCommandEnvelopeTest {
         assertEquals(listOf(11L, 12L), sequences)
     }
 
+    /**
+     * Current game bundles reject PurchaseShopItem without viewMode.
+     */
+    @Test fun `a shop purchase includes the required view mode`() {
+        actions.purchaseShopItem(shop = "seed", itemType = "Seed", itemId = "Carrot")
+
+        assertWrapped("PurchaseShopItem")
+        val command = lastCommand()
+        assertEquals("seed", command["shop"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("list", command["viewMode"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("Seed", command["item"]?.jsonObject?.get("itemType")?.jsonPrimitive?.contentOrNull)
+        assertEquals("Carrot", command["item"]?.jsonObject?.get("species")?.jsonPrimitive?.contentOrNull)
+        assertNull(command["quantity"])
+    }
+
     @Test fun `each Welcome re-seeds the counter`() {
         sequencer.seed(5)
         actions.harvestCrop(slot = 1)
