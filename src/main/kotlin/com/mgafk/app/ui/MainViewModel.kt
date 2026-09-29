@@ -1,7 +1,6 @@
 package com.mgafk.app.ui
 
 import com.mgafk.app.data.AppLog
-import com.mgafk.app.data.NuclearLogStore
 import com.mgafk.app.data.model.AlertConfig
 import com.mgafk.app.data.model.AlertMode
 import com.mgafk.app.data.model.AppSettings
@@ -2102,37 +2101,9 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         mutation: String,
     ) {
         val client = clients[sessionId] ?: return
-        val session = _state.value.sessions.find { it.id == sessionId } ?: return
-        val crop = session.garden.firstOrNull {
-            it.tileId == tileObjectIdx && it.growSlotIdx == growSlotIdx
-        } ?: return
-        val toolId = when (mutation) {
-            "Chilled" -> "ChilledPotion"
-            "Frozen" -> "FrozenPotion"
-            else -> "${mutation}Potion"
-        }
-        val inventoryCount = session.inventory.tools
-            .firstOrNull { it.toolId == toolId }?.quantity ?: 0
-
-        NuclearLogStore.beginInjectTrace(
-            sessionId = sessionId,
-            tileObjectIdx = tileObjectIdx,
-            growSlotIdx = growSlotIdx,
-            slotId = slotId,
-            species = crop.species,
-            mutation = mutation,
-            toolId = toolId,
-            inventoryCount = inventoryCount,
-            size = crop.size,
-            mutations = crop.mutations,
-            startTime = crop.startTime,
-            endTime = crop.endTime,
-        )
-        NuclearLogStore.observePotionInventory(sessionId, session.inventory.tools)
-        NuclearLogStore.observeGarden(sessionId, session.garden)
 
         // The server keys crop actions by the explicit slotId even though this field is named
-        // growSlotIdx on the wire. Keep the array position separately for DNA/debugging.
+        // growSlotIdx on the wire.
         client.actions.mutationPotion(
             tileObjectIdx = tileObjectIdx,
             growSlotIdx = slotId,
@@ -2852,7 +2823,6 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 }
                 val freeTiles = clients[sessionId]?.let { computeFreePlantTileCount(it) } ?: 0
                 updateSession(sessionId) { it.copy(garden = newGarden, freePlantTiles = freeTiles) }
-                NuclearLogStore.observeGarden(sessionId, newGarden)
                 scheduleProjectA(sessionId)
                 scheduleProjectB(sessionId)
                 scheduleProjectC(sessionId)
@@ -3095,7 +3065,6 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                         availableStorages = availableStorages,
                     )
                 }
-                NuclearLogStore.observePotionInventory(sessionId, tools)
                 scheduleTroughAlertCheck(sessionId)
                 runAutoStock(sessionId, seeds, decors, tools, siloSeeds, shedDecors, shackTools, availableStorages)
                 scheduleProjectA(sessionId)

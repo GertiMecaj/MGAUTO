@@ -39,7 +39,6 @@ import androidx.compose.material.icons.outlined.Pets
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ShoppingCart
-import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
@@ -108,7 +107,6 @@ import com.mgafk.app.ui.screens.storage.ToolShackCard
 import com.mgafk.app.ui.screens.pets.ActivePetsCard
 import com.mgafk.app.ui.screens.pets.PetTeamCard
 import com.mgafk.app.ui.screens.shops.ShopsCards
-import com.mgafk.app.ui.screens.nuclear.NuclearLogsCard
 import com.mgafk.app.ui.screens.projects.ProjectACard
 import com.mgafk.app.ui.screens.projects.ProjectBCard
 import com.mgafk.app.ui.screens.projects.ProjectCCard
@@ -154,7 +152,6 @@ enum class NavSection(
     PROJECT_D("Project D", Icons.Outlined.Pets, requiresConnection = true),
     PROJECT_E("Project E", Icons.Outlined.ShoppingCart, requiresConnection = true),
     PROJECT_F("Project F", Icons.Outlined.Pets, requiresConnection = true),
-    NUCLEAR("Nuclear", Icons.Outlined.Science),
     SOCIAL("Social", Icons.Outlined.People),
     ALERTS("Alerts", Icons.Outlined.Notifications),
     SETTINGS("Settings", Icons.Outlined.Settings),
@@ -433,14 +430,6 @@ private fun DrawerContent(
                     )
                 }
         }
-
-        DrawerItem(
-            icon = NavSection.NUCLEAR.icon,
-            label = NavSection.NUCLEAR.label,
-            selected = selected == NavSection.NUCLEAR,
-            enabled = true,
-            onClick = { onSelect(NavSection.NUCLEAR) },
-        )
 
         // Mini Games, Alerts, Settings & Debug - pinned at bottom
         HorizontalDivider(color = SurfaceBorder, thickness = 1.dp)
@@ -810,11 +799,6 @@ private fun SectionContent(
                 session = session,
                 onEnabledChange = { viewModel.setProjectFEnabled(session.id, it) },
             )
-        }
-        NavSection.NUCLEAR -> {
-            // This screen is intentionally not kept alive off-screen. A live collector here
-            // would force a hidden Compose tree to recompose on every WebSocket packet.
-            if (isVisible) NuclearLogsCard()
         }
         NavSection.STORAGE -> {
             SectionTip(

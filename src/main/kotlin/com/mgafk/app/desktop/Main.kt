@@ -7,7 +7,6 @@ import com.mgafk.app.ui.MainViewModel
 import com.mgafk.app.ui.screens.MainScreen
 import com.mgafk.app.ui.theme.MgAfkTheme
 import com.mgafk.app.data.CrashLog
-import com.mgafk.app.data.NuclearLogStore
 import kotlinx.coroutines.launch
 import java.awt.*
 import java.awt.image.BufferedImage
@@ -16,7 +15,6 @@ import javax.swing.JOptionPane
 fun main(args: Array<String>) {
     val context = DesktopContext.instance
     CrashLog.install(context, "desktop"); CrashLog.trimIfLarge(context)
-    NuclearLogStore.initialize(context)
     application {
         val model = remember { MainViewModel() }
         val scope = rememberCoroutineScope()
