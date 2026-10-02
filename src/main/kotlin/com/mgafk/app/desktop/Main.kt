@@ -120,7 +120,6 @@ fun main(args: Array<String>) {
             }
         }
     }
-    }
     } finally {
         SingleInstanceGuard.release()
     }
