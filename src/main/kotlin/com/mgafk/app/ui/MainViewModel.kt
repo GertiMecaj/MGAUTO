@@ -178,6 +178,8 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
             val troughTipDismissed = repo.isTroughTipDismissed()
             val petTipDismissed = repo.isPetTipDismissed()
             val settings = repo.loadSettings()
+            // Immediately rewrite any older preferences file into the strict settings-only format.
+            repo.sanitizeToSettingsOnly(sessions, alerts, settings)
             alertNotifier.alarmSoundUri = settings.alarmSoundUri
             alertNotifier.alarmSchedules = settings.alarmSchedules
             alertNotifier.alarmVolume = settings.alarmVolume
@@ -255,13 +257,10 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
             val current = com.mgafk.app.BuildConfig.VERSION_NAME
             if (!VersionFetcher.isNewer(current, release.tagName)) return
 
+            val alreadyShownThisRun = _state.value.updateAvailable?.tagName == release.tagName
             _state.update { it.copy(updateAvailable = release) }
-
-            // Only send notification once per version
-            val lastNotified = repo.getLastNotifiedVersion()
-            if (lastNotified != release.tagName) {
+            if (!alreadyShownThisRun) {
                 alertNotifier.notifyUpdate(release.tagName, release.downloadUrl)
-                repo.setLastNotifiedVersion(release.tagName)
             }
         } catch (_: Exception) {
             // Silent - don't crash the app over an update check

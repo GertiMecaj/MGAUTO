@@ -26,17 +26,27 @@ class BrowserWindow : Form {
     readonly System.Windows.Forms.Timer timer = new() { Interval = 750 };
     bool checking, done;
     readonly HttpClient http = new(new HttpClientHandler { AllowAutoRedirect = true, UseCookies = false }) { Timeout = TimeSpan.FromSeconds(40) };
+    string? profilePath;
     public BrowserWindow(LaunchRequest request) {
         this.request = request;
         Text = request.Mode == "login" ? "MGAUTO — Magic Garden login" : "MGAUTO — Play Magic Garden";
         Width = 1280; Height = 900; StartPosition = FormStartPosition.CenterScreen;
         Controls.Add(web); Shown += async (_,_) => await InitializeBrowser();
-        FormClosed += (_,_) => { timer.Stop(); timer.Dispose(); http.Dispose(); web.Dispose(); };
+        FormClosed += (_,_) => {
+            timer.Stop(); timer.Dispose(); http.Dispose(); web.Dispose();
+            if (!string.IsNullOrWhiteSpace(profilePath)) {
+                try { Directory.Delete(profilePath, true); } catch { }
+            }
+        };
     }
     async Task InitializeBrowser() {
         try {
-            string profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MGAUTO", "Browser", request.Profile);
-            Directory.CreateDirectory(profile);
+            profilePath = Path.Combine(
+                Path.GetTempPath(),
+                "MGAUTO-Browser",
+                request.Profile + "-" + Guid.NewGuid().ToString("N")
+            );
+            Directory.CreateDirectory(profilePath);
             try { CoreWebView2Environment.GetAvailableBrowserVersionString(); }
             catch (WebView2RuntimeNotFoundException) {
                 if (request.Mode == "smoke") throw;
@@ -54,7 +64,7 @@ class BrowserWindow : Form {
                 }
                 if (!ready) throw new Exception("WebView2 setup did not complete. Restart MGAUTO after Windows finishes installing it.");
             }
-            var env = await CoreWebView2Environment.CreateAsync(null, profile);
+            var env = await CoreWebView2Environment.CreateAsync(null, profilePath);
             await web.EnsureCoreWebView2Async(env);
             var core = web.CoreWebView2;
             core.Settings.AreDevToolsEnabled = false;

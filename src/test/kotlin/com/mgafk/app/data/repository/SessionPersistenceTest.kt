@@ -36,9 +36,9 @@ class SessionPersistenceTest {
         val saved = SessionRepository.persistedSession(source)
 
         assertEquals("AFK", saved.name)
-        assertEquals("token", saved.cookie)
+        assertEquals("", saved.cookie)
         assertEquals("room-1", saved.room)
-        assertTrue(saved.wantConnected)
+        assertFalse(saved.wantConnected)
         assertTrue(saved.projectAEnabled)
         assertEquals(setOf("Carrot"), saved.projectASelectedSeeds)
         assertTrue(saved.projectGEnabled)

@@ -6,21 +6,27 @@ import androidx.compose.ui.window.*
 import com.mgafk.app.ui.MainViewModel
 import com.mgafk.app.ui.screens.MainScreen
 import com.mgafk.app.ui.theme.MgAfkTheme
-import com.mgafk.app.data.CrashLog
 import kotlinx.coroutines.launch
 import java.awt.*
 import java.awt.image.BufferedImage
 import java.io.RandomAccessFile
+import java.io.File
 import java.nio.channels.FileLock
+import java.util.prefs.Preferences
 import javax.swing.JOptionPane
 
 private object SingleInstanceGuard {
     private var file: RandomAccessFile? = null
     private var lock: FileLock? = null
 
+    private val lockFile = File(
+        File(System.getProperty("java.io.tmpdir"), "MGAUTO").apply { mkdirs() },
+        "mgauto.instance.lock",
+    )
+
     fun acquire(context: DesktopContext): Boolean {
         val handle = runCatching {
-            RandomAccessFile(java.io.File(context.filesDir, "mgauto.instance.lock"), "rw")
+            RandomAccessFile(lockFile, "rw")
         }.getOrNull() ?: return false
 
         val acquired = runCatching { handle.channel.tryLock() }.getOrNull()
@@ -39,6 +45,29 @@ private object SingleInstanceGuard {
         runCatching { file?.close() }
         lock = null
         file = null
+        runCatching { lockFile.delete() }
+    }
+}
+
+private fun clearLegacyTransientData(context: DesktopContext) {
+    // Keep settings.preferences_pb only. Everything below is legacy/transient data.
+    listOf(
+        "crash_log.txt",
+        "gemini.user.js",
+        "nuclear-events.jsonl",
+        "mgauto.instance.lock",
+    ).forEach { name -> runCatching { File(context.filesDir, name).delete() } }
+
+    runCatching { File(context.filesDir, "Browser").deleteRecursively() }
+    context.filesDir.listFiles()
+        ?.filter { it.name.startsWith("settings.preferences_pb.corrupt-") }
+        ?.forEach { runCatching { it.delete() } }
+
+    // Older Gemini builds stored a cache tag in the Windows Preferences registry.
+    runCatching {
+        val node = Preferences.userRoot().node("MGAUTO/gemini_fetcher")
+        if (node.nodeExists("")) node.removeNode()
+        Preferences.userRoot().flush()
     }
 }
 
@@ -54,7 +83,7 @@ fun main(args: Array<String>) {
         return
     }
 
-    CrashLog.install(context, "desktop"); CrashLog.trimIfLarge(context)
+    clearLegacyTransientData(context)
     try {
     application {
         val model = remember { MainViewModel() }

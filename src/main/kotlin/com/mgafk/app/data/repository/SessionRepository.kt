@@ -24,21 +24,9 @@ private val settingsFile = java.io.File(
     "settings.preferences_pb",
 )
 private val desktopStore = PreferenceDataStoreFactory.create(
-    corruptionHandler = ReplaceFileCorruptionHandler {
-        // Keep the broken bytes for diagnosis/recovery, then let DataStore recreate a clean file.
-        runCatching {
-            if (settingsFile.exists()) {
-                settingsFile.copyTo(
-                    java.io.File(
-                        settingsFile.parentFile,
-                        "settings.preferences_pb.corrupt-" + System.currentTimeMillis(),
-                    ),
-                    overwrite = false,
-                )
-            }
-        }
-        emptyPreferences()
-    },
+    // Preferences are only configuration. If the protobuf is corrupt, recreate it cleanly;
+    // do not retain a copy of the damaged file.
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
     produceFile = { settingsFile },
 )
 private val Context.dataStore: DataStore<Preferences> get() = desktopStore
@@ -56,6 +44,9 @@ class SessionRepository(private val context: Context) {
          * DataStore edits during busy automation.
          */
         internal fun persistedSession(session: Session): Session = session.copy(
+            // Credentials and connection intent are runtime-only. A restart requires login again.
+            cookie = "",
+            wantConnected = false,
             connected = false,
             busy = false,
             status = com.mgafk.app.data.model.SessionStatus.IDLE,
@@ -103,6 +94,9 @@ class SessionRepository(private val context: Context) {
 
         internal fun persistedSessions(sessions: List<Session>): List<Session> =
             sessions.map(::persistedSession)
+
+        internal fun persistedAlerts(config: AlertConfig): AlertConfig =
+            config.copy(collapsed = emptyMap())
         private val KEY_ACTIVE = stringPreferencesKey("mgafk.activeSession")
         private val KEY_ALERTS = stringPreferencesKey("mgafk.alerts")
         private val KEY_SHOP_TIP = booleanPreferencesKey("mgafk.shopTipDismissed")
@@ -141,21 +135,15 @@ class SessionRepository(private val context: Context) {
         }
     }
 
-    suspend fun loadActiveSessionId(): String? {
-        return context.dataStore.data.map { it[KEY_ACTIVE] }.first()
-    }
-
-    suspend fun saveActiveSessionId(id: String) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_ACTIVE] = id
-        }
-    }
+    // Active tab/session is UI runtime state, not a setting.
+    suspend fun loadActiveSessionId(): String? = null
+    suspend fun saveActiveSessionId(id: String) = Unit
 
     suspend fun loadAlerts(): AlertConfig {
         val raw = context.dataStore.data.map { it[KEY_ALERTS] }.first()
         if (raw.isNullOrBlank()) return AlertConfig()
         return try {
-            json.decodeFromString<AlertConfig>(raw)
+            persistedAlerts(json.decodeFromString<AlertConfig>(raw))
         } catch (_: Exception) {
             AlertConfig()
         }
@@ -163,55 +151,22 @@ class SessionRepository(private val context: Context) {
 
     suspend fun saveAlerts(config: AlertConfig) {
         context.dataStore.edit { prefs ->
-            prefs[KEY_ALERTS] = json.encodeToString(config)
+            prefs[KEY_ALERTS] = json.encodeToString(persistedAlerts(config))
         }
     }
 
-    suspend fun isShopTipDismissed(): Boolean {
-        return context.dataStore.data.map { it[KEY_SHOP_TIP] ?: false }.first()
-    }
+    suspend fun isShopTipDismissed(): Boolean = false
+    suspend fun dismissShopTip() = Unit
 
-    suspend fun dismissShopTip() {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_SHOP_TIP] = true
-        }
-    }
+    suspend fun isTroughTipDismissed(): Boolean = false
+    suspend fun dismissTroughTip() = Unit
 
-    suspend fun isTroughTipDismissed(): Boolean {
-        return context.dataStore.data.map { it[KEY_TROUGH_TIP] ?: false }.first()
-    }
+    suspend fun isPetTipDismissed(): Boolean = false
+    suspend fun dismissPetTip() = Unit
 
-    suspend fun dismissTroughTip() {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_TROUGH_TIP] = true
-        }
-    }
-
-    suspend fun isPetTipDismissed(): Boolean {
-        return context.dataStore.data.map { it[KEY_PET_TIP] ?: false }.first()
-    }
-
-    suspend fun dismissPetTip() {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_PET_TIP] = true
-        }
-    }
-
-    suspend fun loadCollapsedCards(): Map<String, Boolean> {
-        val raw = context.dataStore.data.map { it[KEY_COLLAPSED_CARDS] }.first()
-        if (raw.isNullOrBlank()) return emptyMap()
-        return try {
-            json.decodeFromString<Map<String, Boolean>>(raw)
-        } catch (_: Exception) {
-            emptyMap()
-        }
-    }
-
-    suspend fun saveCollapsedCards(collapsed: Map<String, Boolean>) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_COLLAPSED_CARDS] = json.encodeToString(collapsed)
-        }
-    }
+    // Card expansion/collapse is UI history, not a setting.
+    suspend fun loadCollapsedCards(): Map<String, Boolean> = emptyMap()
+    suspend fun saveCollapsedCards(collapsed: Map<String, Boolean>) = Unit
 
     suspend fun loadSettings(): AppSettings {
         val raw = context.dataStore.data.map { it[KEY_SETTINGS] }.first()
@@ -229,73 +184,42 @@ class SessionRepository(private val context: Context) {
         }
     }
 
-    suspend fun isTeamTipDismissed(): Boolean {
-        return context.dataStore.data.map { it[KEY_TEAM_TIP] ?: false }.first()
-    }
+    suspend fun isTeamTipDismissed(): Boolean = false
+    suspend fun dismissTeamTip() = Unit
 
-    suspend fun dismissTeamTip() {
+    suspend fun isGardenTipDismissed(): Boolean = false
+    suspend fun dismissGardenTip() = Unit
+
+    suspend fun isSeedTipDismissed(): Boolean = false
+    suspend fun dismissSeedTip() = Unit
+
+    suspend fun isEggTipDismissed(): Boolean = false
+    suspend fun dismissEggTip() = Unit
+
+    suspend fun isPlantTipDismissed(): Boolean = false
+    suspend fun dismissPlantTip() = Unit
+
+    suspend fun isStorageTipDismissed(): Boolean = false
+    suspend fun dismissStorageTip() = Unit
+
+    // Update-notification history is runtime-only.
+    suspend fun getLastNotifiedVersion(): String? = null
+    suspend fun setLastNotifiedVersion(version: String) = Unit
+
+    /**
+     * Rewrite the DataStore to the strict settings-only allowlist. This removes legacy keys
+     * and any live-state JSON written by older MGAUTO builds.
+     */
+    suspend fun sanitizeToSettingsOnly(
+        sessions: List<Session>,
+        alerts: AlertConfig,
+        settings: AppSettings,
+    ) {
         context.dataStore.edit { prefs ->
-            prefs[KEY_TEAM_TIP] = true
-        }
-    }
-
-    suspend fun isGardenTipDismissed(): Boolean {
-        return context.dataStore.data.map { it[KEY_GARDEN_TIP] ?: false }.first()
-    }
-
-    suspend fun dismissGardenTip() {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_GARDEN_TIP] = true
-        }
-    }
-
-    suspend fun isSeedTipDismissed(): Boolean {
-        return context.dataStore.data.map { it[KEY_SEED_TIP] ?: false }.first()
-    }
-
-    suspend fun dismissSeedTip() {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_SEED_TIP] = true
-        }
-    }
-
-    suspend fun isEggTipDismissed(): Boolean {
-        return context.dataStore.data.map { it[KEY_EGG_TIP] ?: false }.first()
-    }
-
-    suspend fun dismissEggTip() {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_EGG_TIP] = true
-        }
-    }
-
-    suspend fun isPlantTipDismissed(): Boolean {
-        return context.dataStore.data.map { it[KEY_PLANT_TIP] ?: false }.first()
-    }
-
-    suspend fun dismissPlantTip() {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_PLANT_TIP] = true
-        }
-    }
-
-    suspend fun isStorageTipDismissed(): Boolean {
-        return context.dataStore.data.map { it[KEY_STORAGE_TIP] ?: false }.first()
-    }
-
-    suspend fun dismissStorageTip() {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_STORAGE_TIP] = true
-        }
-    }
-
-    suspend fun getLastNotifiedVersion(): String? {
-        return context.dataStore.data.map { it[KEY_NOTIFIED_VERSION] }.first()
-    }
-
-    suspend fun setLastNotifiedVersion(version: String) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_NOTIFIED_VERSION] = version
+            prefs.clear()
+            prefs[KEY_SESSIONS] = json.encodeToString(persistedSessions(sessions))
+            prefs[KEY_ALERTS] = json.encodeToString(persistedAlerts(alerts))
+            prefs[KEY_SETTINGS] = json.encodeToString(settings.migrated())
         }
     }
 }
