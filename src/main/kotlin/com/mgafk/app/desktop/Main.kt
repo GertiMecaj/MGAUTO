@@ -10,11 +10,52 @@ import com.mgafk.app.data.CrashLog
 import kotlinx.coroutines.launch
 import java.awt.*
 import java.awt.image.BufferedImage
+import java.io.RandomAccessFile
+import java.nio.channels.FileLock
 import javax.swing.JOptionPane
+
+private object SingleInstanceGuard {
+    private var file: RandomAccessFile? = null
+    private var lock: FileLock? = null
+
+    fun acquire(context: DesktopContext): Boolean {
+        val handle = runCatching {
+            RandomAccessFile(java.io.File(context.filesDir, "mgauto.instance.lock"), "rw")
+        }.getOrNull() ?: return false
+
+        val acquired = runCatching { handle.channel.tryLock() }.getOrNull()
+        if (acquired == null) {
+            runCatching { handle.close() }
+            return false
+        }
+
+        file = handle
+        lock = acquired
+        return true
+    }
+
+    fun release() {
+        runCatching { lock?.release() }
+        runCatching { file?.close() }
+        lock = null
+        file = null
+    }
+}
 
 fun main(args: Array<String>) {
     val context = DesktopContext.instance
+    if (!SingleInstanceGuard.acquire(context)) {
+        JOptionPane.showMessageDialog(
+            null,
+            "MGAUTO is already running. Open it from the system tray instead of launching another copy.",
+            "MGAUTO already running",
+            JOptionPane.INFORMATION_MESSAGE,
+        )
+        return
+    }
+
     CrashLog.install(context, "desktop"); CrashLog.trimIfLarge(context)
+    try {
     application {
         val model = remember { MainViewModel() }
         val scope = rememberCoroutineScope()
@@ -78,5 +119,9 @@ fun main(args: Array<String>) {
                 )
             }
         }
+    }
+    }
+    } finally {
+        SingleInstanceGuard.release()
     }
 }

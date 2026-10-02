@@ -162,9 +162,15 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
 
+    /** Single persistence worker: never create one coroutine per WebSocket event. */
+    private var persistJob: Job? = null
+    private var persistDirty = false
+    private var lastPersistedSessions: List<Session> = emptyList()
+
     init {
         viewModelScope.launch {
             val sessions = repo.loadSessions().ifEmpty { listOf(Session()) }
+            lastPersistedSessions = repo.persistenceSnapshot(sessions)
             val activeId = repo.loadActiveSessionId() ?: sessions.first().id
             val alerts = repo.loadAlerts()
             val collapsedCards = repo.loadCollapsedCards()
@@ -3368,10 +3374,29 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
     }
 
     private fun persist() {
-        viewModelScope.launch {
-            repo.saveSessions(_state.value.sessions)
+        val snapshot = repo.persistenceSnapshot(_state.value.sessions)
+        if (snapshot == lastPersistedSessions && !persistDirty) return
+
+        persistDirty = true
+        if (persistJob?.isActive == true) return
+
+        persistJob = viewModelScope.launch {
+            while (persistDirty) {
+                persistDirty = false
+                val latest = repo.persistenceSnapshot(_state.value.sessions)
+                if (latest != lastPersistedSessions) {
+                    repo.saveSessions(latest)
+                    lastPersistedSessions = latest
+                }
+            }
         }
     }
 
-    fun close() { collectorJobs.values.forEach { it.cancel() }; clients.values.forEach { it.dispose() }; alertNotifier.cleanup(); AfkService.stop(); viewModelScope.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
+    fun close() {
+        collectorJobs.values.forEach { it.cancel() }
+        clients.values.forEach { it.dispose() }
+        alertNotifier.cleanup()
+        AfkService.stop()
+        viewModelScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+    }
 }

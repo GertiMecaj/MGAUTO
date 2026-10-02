@@ -2,9 +2,11 @@ package com.mgafk.app.data.repository
 
 import com.mgafk.app.desktop.DesktopContext as Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.mgafk.app.data.model.AlertConfig
@@ -17,7 +19,28 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
 import com.mgafk.app.data.AppJson
 
-private val desktopStore = PreferenceDataStoreFactory.create { java.io.File(com.mgafk.app.desktop.DesktopContext.instance.filesDir, "settings.preferences_pb") }
+private val settingsFile = java.io.File(
+    com.mgafk.app.desktop.DesktopContext.instance.filesDir,
+    "settings.preferences_pb",
+)
+private val desktopStore = PreferenceDataStoreFactory.create(
+    corruptionHandler = ReplaceFileCorruptionHandler {
+        // Keep the broken bytes for diagnosis/recovery, then let DataStore recreate a clean file.
+        runCatching {
+            if (settingsFile.exists()) {
+                settingsFile.copyTo(
+                    java.io.File(
+                        settingsFile.parentFile,
+                        "settings.preferences_pb.corrupt-" + System.currentTimeMillis(),
+                    ),
+                    overwrite = false,
+                )
+            }
+        }
+        emptyPreferences()
+    },
+    produceFile = { settingsFile },
+)
 private val Context.dataStore: DataStore<Preferences> get() = desktopStore
 
 class SessionRepository(private val context: Context) {
@@ -25,6 +48,61 @@ class SessionRepository(private val context: Context) {
 
     companion object {
         private val KEY_SESSIONS = stringPreferencesKey("mgafk.sessions")
+
+        /**
+         * Only user/session configuration belongs on disk. Everything else is authoritative
+         * live server state and is rehydrated on reconnect. Persisting that state on every
+         * WebSocket patch caused unnecessary protobuf rewrites and could build a large queue of
+         * DataStore edits during busy automation.
+         */
+        internal fun persistedSession(session: Session): Session = session.copy(
+            connected = false,
+            busy = false,
+            status = com.mgafk.app.data.model.SessionStatus.IDLE,
+            error = "",
+            reconnectCountdown = "",
+            players = 0,
+            connectedAt = 0,
+            playerId = "",
+            playerName = "",
+            roomId = "",
+            weather = "",
+            pets = emptyList(),
+            logs = emptyList(),
+            shops = emptyList(),
+            garden = emptyList(),
+            gardenEggs = emptyList(),
+            inventory = com.mgafk.app.data.model.InventorySnapshot(),
+            seedSilo = emptyList(),
+            decorShed = emptyList(),
+            petHutch = emptyList(),
+            feedingTrough = emptyList(),
+            toolShack = emptyList(),
+            storedEggs = emptyList(),
+            chatMessages = emptyList(),
+            playersList = emptyList(),
+            gameVersion = "",
+            freePlantTiles = 0,
+            crystals = emptyList(),
+            occupiedTiles = emptySet(),
+            crystalsReadAtMs = 0L,
+            favoritedItemIds = emptySet(),
+            lastHatchedPet = null,
+            lastHatchedEggId = "",
+            wsLogs = emptyList(),
+            magicDust = 0.0,
+            hutchCapacitySlots = com.mgafk.app.data.repository.PriceCalculator.HUTCH_BASE_CAPACITY,
+            siloCapacitySlots = com.mgafk.app.data.repository.PriceCalculator.SILO_BASE_CAPACITY,
+            decorShedCapacitySlots = com.mgafk.app.data.repository.PriceCalculator.DECOR_SHED_BASE_CAPACITY,
+            toolShackCapacitySlots = com.mgafk.app.data.repository.PriceCalculator.TOOL_SHACK_BASE_CAPACITY,
+            availableStorages = emptySet(),
+            hostPlayerId = "",
+            bots = emptyList(),
+            petTeams = emptyList(),
+        )
+
+        internal fun persistedSessions(sessions: List<Session>): List<Session> =
+            sessions.map(::persistedSession)
         private val KEY_ACTIVE = stringPreferencesKey("mgafk.activeSession")
         private val KEY_ALERTS = stringPreferencesKey("mgafk.alerts")
         private val KEY_SHOP_TIP = booleanPreferencesKey("mgafk.shopTipDismissed")
@@ -45,24 +123,21 @@ class SessionRepository(private val context: Context) {
         val raw = context.dataStore.data.map { it[KEY_SESSIONS] }.first()
         if (raw.isNullOrBlank()) return listOf(Session())
         return try {
-            json.decodeFromString<List<Session>>(raw)
+            persistedSessions(json.decodeFromString<List<Session>>(raw))
         } catch (_: Exception) {
             listOf(Session())
         }
     }
 
+    fun persistenceSnapshot(sessions: List<Session>): List<Session> = persistedSessions(sessions)
+
     suspend fun saveSessions(sessions: List<Session>) {
-        val serializable = sessions.map {
-            it.copy(
-                connected = false,
-                busy = false,
-                status = com.mgafk.app.data.model.SessionStatus.IDLE,
-                connectedAt = 0,
-                wsLogs = emptyList(),
-            )
-        }
+        val encoded = json.encodeToString(persistedSessions(sessions))
         context.dataStore.edit { prefs ->
-            prefs[KEY_SESSIONS] = json.encodeToString(serializable)
+            // Avoid rewriting the protobuf when only transient/live game state changed.
+            if (prefs[KEY_SESSIONS] != encoded) {
+                prefs[KEY_SESSIONS] = encoded
+            }
         }
     }
 
