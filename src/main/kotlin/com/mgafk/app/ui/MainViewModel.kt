@@ -776,6 +776,155 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         }
     }
 
+    private val projectGJobs = mutableMapOf<String, Job>()
+    private val projectGActionJobs = mutableMapOf<String, Job>()
+
+    fun setProjectGEnabled(sessionId: String, enabled: Boolean) {
+        updateSession(sessionId) { it.copy(projectGEnabled = enabled) }
+        if (enabled) {
+            scheduleProjectG(sessionId)
+            scheduleProjectA(sessionId)
+            scheduleProjectE(sessionId)
+        } else {
+            projectGJobs.remove(sessionId)?.cancel()
+            projectGActionJobs.remove(sessionId)?.cancel()
+            scheduleProjectA(sessionId)
+            scheduleProjectE(sessionId)
+        }
+    }
+
+    fun setProjectGSelectedSeeds(sessionId: String, seeds: Set<String>) {
+        updateSession(sessionId) { it.copy(projectGSelectedSeeds = seeds) }
+        scheduleProjectG(sessionId)
+        scheduleProjectA(sessionId)
+        scheduleProjectE(sessionId)
+    }
+
+    /** Debounce onto the latest authoritative inventory/storage snapshot. */
+    private fun scheduleProjectG(sessionId: String, delayMs: Long = 90L) {
+        projectGJobs[sessionId]?.cancel()
+        projectGJobs[sessionId] = viewModelScope.launch {
+            delay(delayMs)
+            runProjectG(sessionId)
+        }
+    }
+
+    private suspend fun awaitProjectGInventoryIncrease(
+        sessionId: String,
+        species: String,
+        beforeQuantity: Int,
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + PROJECT_AUTOMATION_CONFIRM_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val current = _state.value.sessions.find { it.id == sessionId }
+                ?.inventory?.seeds
+                ?.find { it.species == species }
+                ?.quantity ?: 0
+            if (current > beforeQuantity) return true
+            delay(75)
+        }
+        return false
+    }
+
+    private suspend fun awaitProjectGInventoryDecrease(
+        sessionId: String,
+        species: String,
+        beforeQuantity: Int,
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + PROJECT_AUTOMATION_CONFIRM_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val current = _state.value.sessions.find { it.id == sessionId }
+                ?.inventory?.seeds
+                ?.find { it.species == species }
+                ?.quantity ?: 0
+            if (current < beforeQuantity) return true
+            delay(75)
+        }
+        return false
+    }
+
+    /**
+     * Project G is a seed blacklist. Inventory seeds are destroyed directly with the game's
+     * Wish command. If a selected species exists only in the Seed Silo, retrieve exactly one,
+     * wait for authoritative inventory confirmation, then Wish it. One unit is processed per
+     * action cycle so duplicate server patches never create speculative duplicate deletes.
+     */
+    private fun runProjectG(sessionId: String) {
+        if (projectGActionJobs[sessionId]?.isActive == true) return
+
+        val session = _state.value.sessions.find { it.id == sessionId } ?: return
+        if (!session.projectGEnabled || session.status != SessionStatus.CONNECTED) return
+        val selected = session.projectGSelectedSeeds
+        if (selected.isEmpty()) return
+
+        val inventorySeed = session.inventory.seeds
+            .filter { it.species in selected && it.quantity > 0 }
+            .sortedBy { it.species }
+            .firstOrNull()
+
+        if (inventorySeed != null) {
+            projectGActionJobs[sessionId] = viewModelScope.launch {
+                try {
+                    val before = _state.value.sessions.find { it.id == sessionId }
+                        ?.inventory?.seeds
+                        ?.find { it.species == inventorySeed.species }
+                        ?.quantity ?: return@launch
+                    if (before <= 0) return@launch
+
+                    clients[sessionId]?.actions?.wish(inventorySeed.species)
+                    if (!awaitProjectGInventoryDecrease(sessionId, inventorySeed.species, before)) {
+                        AppLog.w(TAG, "[ProjectG] Seed deletion was not confirmed: " + inventorySeed.species)
+                    }
+                } finally {
+                    projectGActionJobs.remove(sessionId)
+                    scheduleProjectG(sessionId)
+                }
+            }
+            return
+        }
+
+        val siloSeed = session.seedSilo
+            .filter { it.species in selected && it.quantity > 0 }
+            .sortedBy { it.species }
+            .firstOrNull() ?: return
+
+        if (inventorySlotCount(session) >= StorageCapacity.INVENTORY_LIMIT) return
+
+        projectGActionJobs[sessionId] = viewModelScope.launch {
+            try {
+                val beforeSession = _state.value.sessions.find { it.id == sessionId } ?: return@launch
+                val before = beforeSession.inventory.seeds
+                    .find { it.species == siloSeed.species }
+                    ?.quantity ?: 0
+
+                clients[sessionId]?.actions?.retrieveItemFromStorage(
+                    itemId = siloSeed.species,
+                    storageId = "SeedSilo",
+                    toInventoryIndex = inventorySlotCount(beforeSession),
+                    quantity = 1,
+                )
+                if (!awaitProjectGInventoryIncrease(sessionId, siloSeed.species, before)) {
+                    AppLog.w(TAG, "[ProjectG] Seed Silo retrieval was not confirmed: " + siloSeed.species)
+                    return@launch
+                }
+
+                val afterRetrieve = _state.value.sessions.find { it.id == sessionId }
+                    ?.inventory?.seeds
+                    ?.find { it.species == siloSeed.species }
+                    ?.quantity ?: 0
+                if (afterRetrieve <= 0) return@launch
+
+                clients[sessionId]?.actions?.wish(siloSeed.species)
+                if (!awaitProjectGInventoryDecrease(sessionId, siloSeed.species, afterRetrieve)) {
+                    AppLog.w(TAG, "[ProjectG] Retrieved seed deletion was not confirmed: " + siloSeed.species)
+                }
+            } finally {
+                projectGActionJobs.remove(sessionId)
+                scheduleProjectG(sessionId)
+            }
+        }
+    }
+
     private val projectEJobs = mutableMapOf<String, Job>()
 
     fun setProjectEEnabled(sessionId: String, enabled: Boolean) {
@@ -816,6 +965,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
             .firstOrNull { (_, item, stock) ->
                 item in selected &&
                     stock > 0 &&
+                    !(session.projectGEnabled && item in session.projectGSelectedSeeds) &&
                     session.buyState(item) == ShopItemBuyState.Buyable
             } ?: return
 
@@ -1205,7 +1355,11 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
         if (seedDeleteJobs[sessionId]?.isActive == true) return
         val session = _state.value.sessions.find { it.id == sessionId } ?: return
         if (!session.projectAEnabled || session.status != SessionStatus.CONNECTED) return
-        val selected = session.projectASelectedSeeds
+        val selected = if (session.projectGEnabled) {
+            session.projectASelectedSeeds - session.projectGSelectedSeeds
+        } else {
+            session.projectASelectedSeeds
+        }
         if (selected.isEmpty()) return
         // Project A is fully paused at the 13-plot floor: no buying and no planting.
         if (!ProjectAutomationPolicy.canProjectAOperate(session.freePlantTiles)) return
@@ -1985,10 +2139,12 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
     ) {
         val actions = clients[sessionId]?.actions ?: return
         val settings = _state.value.settings
+        val session = _state.value.sessions.find { it.id == sessionId }
+        val projectGSeeds = if (session?.projectGEnabled == true) session.projectGSelectedSeeds else emptySet()
 
         if (settings.autoStockSeedSilo && "SeedSilo" in availableStorages) {
             val siloSpecies = siloSeeds.map { it.species }.toSet()
-            val toMove = invSeeds.filter { it.species in siloSpecies }
+            val toMove = invSeeds.filter { it.species in siloSpecies && it.species !in projectGSeeds }
             for (seed in toMove) {
                 actions.putItemInStorage(
                     itemId = seed.species,
@@ -3072,6 +3228,7 @@ class MainViewModel(private val application: com.mgafk.app.desktop.DesktopContex
                 scheduleProjectC(sessionId)
                 scheduleProjectE(sessionId)
                 scheduleProjectF(sessionId)
+                scheduleProjectG(sessionId)
             }
             is ClientEvent.EggsChanged -> {
                 val newEggs = event.eggs.map { tile ->

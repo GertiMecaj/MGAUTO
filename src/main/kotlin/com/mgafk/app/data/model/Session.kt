@@ -103,6 +103,9 @@ data class Session(
     val projectESelectedItems: Set<String> = emptySet(),
     /** Project F: retrieve stored eggs, plant them regardless of Project A's plot reserve, hatch. */
     val projectFEnabled: Boolean = false,
+    /** Project G: automatically destroy selected seed species as soon as they are acquired. */
+    val projectGEnabled: Boolean = false,
+    val projectGSelectedSeeds: Set<String> = emptySet(),
 )
 
 @Serializable

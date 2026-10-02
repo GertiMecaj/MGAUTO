@@ -180,6 +180,29 @@ class GameActionsCommandEnvelopeTest {
         assertEquals("plant", command["slotType"]?.jsonPrimitive?.contentOrNull)
     }
 
+    @Test fun `wish deletes a selected seed by carrying its species as itemId`() {
+        actions.wish("Carrot")
+
+        assertWrapped("Wish")
+        assertEquals("Carrot", lastCommand()["itemId"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test fun `seed silo retrieval carries quantity and destination`() {
+        actions.retrieveItemFromStorage(
+            itemId = "Carrot",
+            storageId = "SeedSilo",
+            toInventoryIndex = 7,
+            quantity = 1,
+        )
+
+        assertWrapped("RetrieveItemFromStorage")
+        val command = lastCommand()
+        assertEquals("Carrot", command["itemId"]?.jsonPrimitive?.contentOrNull)
+        assertEquals("SeedSilo", command["storageId"]?.jsonPrimitive?.contentOrNull)
+        assertEquals(7, command["toInventoryIndex"]?.jsonPrimitive?.intOrNull)
+        assertEquals(1, command["quantity"]?.jsonPrimitive?.intOrNull)
+    }
+
     @Test fun `every other gameplay action is wrapped as well`() {
         actions.feedPet(petItemId = "pet_1", cropItemId = "crop_1")
         assertWrapped("FeedPet")

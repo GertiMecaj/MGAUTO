@@ -113,6 +113,7 @@ import com.mgafk.app.ui.screens.projects.ProjectCCard
 import com.mgafk.app.ui.screens.projects.ProjectDCard
 import com.mgafk.app.ui.screens.projects.ProjectECard
 import com.mgafk.app.ui.screens.projects.ProjectFCard
+import com.mgafk.app.ui.screens.projects.ProjectGCard
 import com.mgafk.app.ui.screens.status.LiveStatusCard
 import com.mgafk.app.ui.screens.status.WeatherStationCard
 import com.mgafk.app.ui.theme.Accent
@@ -152,6 +153,7 @@ enum class NavSection(
     PROJECT_D("Project D", Icons.Outlined.Pets, requiresConnection = true),
     PROJECT_E("Project E", Icons.Outlined.ShoppingCart, requiresConnection = true),
     PROJECT_F("Project F", Icons.Outlined.Pets, requiresConnection = true),
+    PROJECT_G("Project G", Icons.Outlined.Inventory2, requiresConnection = true),
     SOCIAL("Social", Icons.Outlined.People),
     ALERTS("Alerts", Icons.Outlined.Notifications),
     SETTINGS("Settings", Icons.Outlined.Settings),
@@ -798,6 +800,14 @@ private fun SectionContent(
             ProjectFCard(
                 session = session,
                 onEnabledChange = { viewModel.setProjectFEnabled(session.id, it) },
+            )
+        }
+        NavSection.PROJECT_G -> {
+            ProjectGCard(
+                session = session,
+                apiReady = state.apiReady,
+                onEnabledChange = { viewModel.setProjectGEnabled(session.id, it) },
+                onSeedSelectionChange = { viewModel.setProjectGSelectedSeeds(session.id, it) },
             )
         }
         NavSection.STORAGE -> {
